@@ -91,7 +91,10 @@ Spt-Flow/
 │   └── client_test.go
 ├── lyrics/
 │   ├── engine.go     # Lyrics fetching and sync (LRCLIB)
-│   └── engine_test.go
+│   ├── engine_test.go
+│   └── cache/
+│       ├── cache.go      # Lyrics cache (LRU, 7-day TTL)
+│       └── cache_test.go
 └── README.md
 ```
 
@@ -100,6 +103,20 @@ Spt-Flow/
 The TUI connects to Spotify via the [MPRIS](https://specifications.freedesktop.org/mpris-spec/latest/) (Media Player Remote Interfacing Specification) D-Bus interface. This allows full control of playback without requiring Spotify API credentials.
 
 Lyrics are fetched from [LRCLIB](https://lrclib.net/), a free and open-source lyrics database.
+
+## Lyrics Cache
+
+Lyrics are cached locally to avoid repeated network requests for the same track. The cache is stored at:
+
+- **Location**: `~/.cache/spt-flow/lyrics.json` (or `$XDG_CACHE_HOME/spt-flow/lyrics.json`)
+- **TTL**: 7 days
+- **Capacity**: 200 entries (LRU eviction when exceeded)
+
+To clear the cache manually:
+
+```bash
+rm ~/.cache/spt-flow/lyrics.json
+```
 
 ## License
 
