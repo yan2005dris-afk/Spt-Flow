@@ -130,7 +130,7 @@ func TestFetchLyrics_SuccessGet(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{
+			_, _ = w.Write([]byte(`{
 				"id": 1234,
 				"name": "Song",
 				"artistName": "Artist",
@@ -174,7 +174,7 @@ func TestFetchLyrics_FallbackToSearch(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`[
+			_, _ = w.Write([]byte(`[
 				{
 					"id": 5678,
 					"name": "Song",

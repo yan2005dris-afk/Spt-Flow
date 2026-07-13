@@ -20,7 +20,7 @@ var ErrFlatpakSandbox = errors.New(
 var ErrLibrespotNotInstalled = errors.New("librespot not found in PATH")
 
 var ErrSpotifyDesktopRunning = errors.New(
-	"Spotify desktop is running — please close it first",
+	"spotify desktop is running — please close it first",
 )
 
 type Track struct {
