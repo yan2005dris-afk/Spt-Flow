@@ -64,16 +64,8 @@ jobs:
           go-version: "1.26"
           cache: true
 
-      - name: Install golangci-lint
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.61.0
-
       - name: Run golangci-lint
-        run: |
-          BASE_BRANCH="${GITHUB_BASE_REF:-main}"
-          echo "Linting against base branch: origin/$BASE_BRANCH"
-          $(go env GOPATH)/bin/golangci-lint run ./... \
-            --timeout=5m \
-            --new-from-rev="origin/$BASE_BRANCH"
-        env:
-          ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.12.2
+          args: --timeout=5m
