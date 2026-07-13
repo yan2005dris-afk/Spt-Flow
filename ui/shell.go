@@ -423,11 +423,13 @@ func (m Model) View() string {
 		mainHeight = 0
 	}
 
-	// Lyrics fill the main area, visualizer bars at bottom (when playing + wide screen).
+	// Lyrics fill the main area minus a fixed visualizer strip below.
+	// The visualizer area is ALWAYS reserved (when wide enough) so lyrics
+	// don't shift when the visualizer appears/disappears (e.g. on track
+	// change when playback status flips).
 	var mainArea string
-	showVis := m.Width >= 80 && m.PlaybackStatus == "Playing"
 	visRow := 0
-	if showVis {
+	if m.Width >= 80 {
 		visRow = 3
 	}
 
@@ -439,8 +441,15 @@ func (m Model) View() string {
 
 	lyricsContent := renderLyrics(m, m.Width, lyricsHeight)
 	if visRow > 0 {
-		visBars := renderVisualizer(m, m.Width, visRow)
-		mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visBars)
+		var visContent string
+		if m.PlaybackStatus == "Playing" {
+			visContent = renderVisualizer(m, m.Width, visRow)
+		} else {
+			// Reserve the visualizer area with blank lines so the layout
+			// stays put when playback toggles.
+			visContent = strings.Repeat("\n", visRow-1)
+		}
+		mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visContent)
 	} else {
 		mainArea = lyricsContent
 	}
@@ -585,6 +594,10 @@ func renderHeader(m Model) string {
 	style := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(m.Theme.Header).
+		Background(lipgloss.Color("0")).                           // subtle dark bg behind header
+		Border(lipgloss.NormalBorder(), true, false, true, false). // top + bottom border
+		BorderForeground(m.Theme.MenuBorder).
+		Width(m.Width).
 		Padding(0, 1)
 
 	trackInfo := fmt.Sprintf("%s - %s", m.Track.Title, m.Track.Artist)
@@ -655,21 +668,32 @@ func formatDuration(d time.Duration) string {
 
 func renderLyrics(m Model, width, height int) string {
 	if len(m.Lyrics.Lines) == 0 {
-		if m.LoadingMessage != "" {
-			return lipgloss.NewStyle().
-				Width(width).
-				Align(lipgloss.Center).
-				Foreground(m.Theme.Waiting).
-				Render(m.LoadingMessage)
+		var msg string
+		var color lipgloss.Color
+		switch {
+		case m.LoadingMessage != "":
+			msg = m.LoadingMessage
+			color = m.Theme.Waiting
+		case m.ErrorMessage != "":
+			msg = "Error: " + m.ErrorMessage
+			color = m.Theme.Error
+		default:
+			msg = "No lyrics available"
+			color = m.Theme.MenuDim
 		}
-		if m.ErrorMessage != "" {
-			return lipgloss.NewStyle().
-				Width(width).
-				Align(lipgloss.Center).
-				Foreground(m.Theme.Error).
-				Render("Error: " + m.ErrorMessage)
-		}
-		return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render("No lyrics available")
+
+		// Render the message centered in a single line, then pad to `height`
+		// lines so the layout stays stable across content changes.
+		rendered := lipgloss.NewStyle().
+			Width(width).
+			Align(lipgloss.Center).
+			Foreground(color).
+			Render(msg)
+
+		// Center the message vertically within the lyrics area.
+		padCount := (height - 1) / 2
+		padding := strings.Repeat("\n", padCount)
+		return padding + rendered + strings.Repeat("\n", height-1-padCount)
 	}
 
 	var renderedLines []string
