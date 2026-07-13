@@ -221,3 +221,131 @@ func TestShell_Update_StateMessages(t *testing.T) {
 		t.Error("Expected SpotifyRunning to be false after offline signal")
 	}
 }
+
+func TestShell_renderLyrics_ErrorState(t *testing.T) {
+	m := Model{
+		SpotifyRunning: true,
+		Width:          80,
+		Height:         24,
+		ErrorMessage:   "Failed to fetch lyrics",
+		Lyrics:         lyrics.Lyrics{},
+	}
+	view := m.View()
+	if !strings.Contains(view, "Error:") && !strings.Contains(view, "Failed to fetch lyrics") {
+		t.Error("Expected error message in view when ErrorMessage is set")
+	}
+}
+
+func TestShell_renderLyrics_PlainLyrics(t *testing.T) {
+	m := Model{
+		SpotifyRunning: true,
+		Width:          80,
+		Height:         24,
+		Lyrics: lyrics.Lyrics{
+			Synced: false,
+			Lines: []lyrics.LyricsLine{
+				{Content: "Plain lyric line 1"},
+				{Content: "Plain lyric line 2"},
+				{Content: "Plain lyric line 3"},
+			},
+		},
+		ScrollOffset: 0,
+	}
+	view := m.View()
+	if !strings.Contains(view, "Plain lyric line 1") {
+		t.Error("Expected plain lyric line 1 in view")
+	}
+	if !strings.Contains(view, "Plain lyric line 2") {
+		t.Error("Expected plain lyric line 2 in view")
+	}
+}
+
+func TestShell_renderLyrics_ScrolledPlainLyrics(t *testing.T) {
+	m := Model{
+		SpotifyRunning: true,
+		Width:          80,
+		Height:         24,
+		Lyrics: lyrics.Lyrics{
+			Synced: false,
+			Lines: []lyrics.LyricsLine{
+				{Content: "Line 1"},
+				{Content: "Line 2"},
+				{Content: "Line 3"},
+				{Content: "Line 4"},
+				{Content: "Line 5"},
+			},
+		},
+		ScrollOffset: 2,
+	}
+	view := m.View()
+	if strings.Contains(view, "Line 1") {
+		t.Error("ScrollOffset=2 should skip Line 1")
+	}
+	if !strings.Contains(view, "Line 3") {
+		t.Error("Expected Line 3 visible at ScrollOffset=2")
+	}
+}
+
+func TestShell_renderFooter_SpotifyNotRunning(t *testing.T) {
+	m := Model{
+		SpotifyRunning: false,
+		Width:          80,
+		Height:         24,
+		Position:       30 * time.Second,
+		Track:          mpris.Track{Duration: 180 * time.Second},
+	}
+	view := m.View()
+	// Should show "Waiting for Spotify..." in the centered waiting view
+	if !strings.Contains(view, "Waiting for Spotify...") {
+		t.Error("Expected 'Waiting for Spotify...' when Spotify is not running")
+	}
+}
+
+func TestShell_fetchLyricsCmd_Success(t *testing.T) {
+	m := NewModel()
+	cmd := m.fetchLyricsCmd(mpris.Track{
+		Title:    "Test Song",
+		Artist:   "Test Artist",
+		Album:    "Test Album",
+		Duration: 180 * time.Second,
+	})
+
+	// Execute the cmd — it runs asynchronously so we check it doesn't panic
+	if cmd == nil {
+		t.Error("fetchLyricsCmd should return a non-nil tea.Cmd")
+	}
+}
+
+func TestShell_scrollDown_Bounds(t *testing.T) {
+	m := Model{
+		Lyrics: lyrics.Lyrics{
+			Synced: false,
+			Lines: []lyrics.LyricsLine{
+				{Content: "Line 1"},
+			},
+		},
+		ScrollOffset: 0,
+	}
+	// scrollDown at offset 0 with only 1 line — should stay at 0
+	m.scrollDown()
+	if m.ScrollOffset != 0 {
+		t.Errorf("ScrollOffset should stay at 0, got %d", m.ScrollOffset)
+	}
+}
+
+func TestShell_scrollUp_Bounds(t *testing.T) {
+	m := Model{
+		Lyrics: lyrics.Lyrics{
+			Synced: false,
+			Lines: []lyrics.LyricsLine{
+				{Content: "Line 1"},
+			},
+		},
+		ScrollOffset: 0,
+	}
+	// scrollUp at offset 0 — should stay at 0
+	m.scrollUp()
+	if m.ScrollOffset != 0 {
+		t.Errorf("ScrollOffset should stay at 0, got %d", m.ScrollOffset)
+	}
+}
