@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   test:
@@ -70,8 +70,10 @@ jobs:
 
       - name: Run golangci-lint
         run: |
+          BASE_BRANCH="${GITHUB_BASE_REF:-main}"
+          echo "Linting against base branch: origin/$BASE_BRANCH"
           $(go env GOPATH)/bin/golangci-lint run ./... \
             --timeout=5m \
-            --new-from-rev=origin/main
+            --new-from-rev="origin/$BASE_BRANCH"
         env:
           ACTIONS_ALLOW_UNSECURE_COMMANDS: true
