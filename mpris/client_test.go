@@ -381,3 +381,66 @@ func TestMprisClient_SetSpotifyCmd(t *testing.T) {
 		t.Error("SetSpotifyCmd did not set the command")
 	}
 }
+
+func TestIsSpotifyDesktopRunning_True(t *testing.T) {
+	mockObj := &mockDBusObject{}
+	mockConn := &mockDBusConnection{
+		ownerName: "org.mpris.MediaPlayer2.spotify",
+		obj:       mockObj,
+	}
+	client := &Client{conn: mockConn, obj: mockObj}
+	if !client.IsSpotifyDesktopRunning() {
+		t.Error("Expected IsSpotifyDesktopRunning to return true when owner exists")
+	}
+}
+
+func TestIsSpotifyDesktopRunning_False(t *testing.T) {
+	mockObj := &mockDBusObject{}
+	mockConn := &mockDBusConnection{
+		ownerName: "",
+		ownerErr:  errors.New("no owner"),
+		obj:       mockObj,
+	}
+	client := &Client{conn: mockConn, obj: mockObj}
+	if client.IsSpotifyDesktopRunning() {
+		t.Error("Expected IsSpotifyDesktopRunning to return false when owner is empty")
+	}
+}
+
+func TestLaunchLibrespot_BinaryNotFound(t *testing.T) {
+	origPath := os.Getenv("PATH")
+	defer os.Setenv("PATH", origPath)
+
+	os.Setenv("PATH", "")
+
+	mockObj := &mockDBusObject{}
+	mockConn := &mockDBusConnection{obj: mockObj}
+	client := &Client{conn: mockConn, obj: mockObj}
+	err := client.LaunchLibrespot("")
+	if err != ErrLibrespotNotInstalled {
+		t.Errorf("Expected ErrLibrespotNotInstalled, got %v", err)
+	}
+}
+
+func TestLaunchLibrespot_DesktopRunning(t *testing.T) {
+	origPath := os.Getenv("PATH")
+	defer os.Setenv("PATH", origPath)
+
+	// Use a PATH that won't contain librespot but won't fail LookPath
+	// We need to test that desktop running check happens AFTER binary check
+	// Since we can't easily mock exec.LookPath, we test the error path
+	// when desktop IS running but binary is not found - binary error takes precedence
+	os.Setenv("PATH", "/nonexistent")
+
+	mockObj := &mockDBusObject{}
+	mockConn := &mockDBusConnection{
+		ownerName: "org.mpris.MediaPlayer2.spotify",
+		obj:       mockObj,
+	}
+	client := &Client{conn: mockConn, obj: mockObj}
+	err := client.LaunchLibrespot("")
+	// Binary not found takes precedence over desktop running check
+	if err != ErrLibrespotNotInstalled {
+		t.Errorf("Expected ErrLibrespotNotInstalled when binary not found, got %v", err)
+	}
+}

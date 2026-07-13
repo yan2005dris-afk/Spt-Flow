@@ -1,8 +1,11 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -57,6 +60,11 @@ type Model struct {
 	ShowingHelp        bool   // for ? overlay
 	HelpTimer          bool   // if true, ? overlay auto-dismisses
 	StatusMessage      string // for check-status option
+}
+
+func mustHome() string {
+	h, _ := os.UserHomeDir()
+	return h
 }
 
 func NewModel(viewState string) Model {
@@ -159,8 +167,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MenuChoiceMsg:
 		switch msg.Choice {
-		case ChoiceStartSpotify:
-			// Create mpris client and launch Spotify
+		case ChoiceStartLibrespot:
+			// Create mpris client and launch librespot
+			client, err := mpris.NewClient()
+			if err != nil {
+				m.ErrorMessage = err.Error()
+				return m, menuTickCmd(3 * time.Second)
+			}
+			m.MprisClient = client
+			cfg := filepath.Join(mustHome(), ".config", "tui-spotify", "librespot.conf")
+			if err := client.LaunchLibrespot(cfg); err != nil {
+				switch {
+				case errors.Is(err, mpris.ErrLibrespotNotInstalled):
+					m.ErrorMessage = "librespot not found. Install: cargo install librespot"
+				case errors.Is(err, mpris.ErrSpotifyDesktopRunning):
+					m.ErrorMessage = "Spotify desktop is running. Please close it first."
+				default:
+					m.ErrorMessage = err.Error()
+				}
+				return m, menuTickCmd(3 * time.Second)
+			}
+			m.LaunchedSpotify = true
+			m.ViewState = "tui"
+			return m, tea.Batch(m.pollSpotifyCmd(), m.tickCmd(), pollTickCmd())
+
+		case ChoiceStartSpotifyDesktop:
 			client, err := mpris.NewClient()
 			if err == nil {
 				m.MprisClient = client
@@ -224,11 +255,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.ViewState == "menu" {
 			switch msg.String() {
 			case "j", "down":
-				m.SelectedMenuOption = (m.SelectedMenuOption + 1) % 4
+				m.SelectedMenuOption = (m.SelectedMenuOption + 1) % 5
 			case "k", "up":
-				m.SelectedMenuOption = (m.SelectedMenuOption - 1 + 4) % 4
+				m.SelectedMenuOption = (m.SelectedMenuOption - 1 + 5) % 5
 			case "enter":
-				choices := []string{ChoiceStartSpotify, ChoiceTUIOnly, ChoiceCheckStatus, ChoiceHelp}
+				choices := []string{ChoiceStartLibrespot, ChoiceTUIOnly, ChoiceCheckStatus, ChoiceHelp, ChoiceStartSpotifyDesktop}
 				return m, func() tea.Msg { return MenuChoiceMsg{Choice: choices[m.SelectedMenuOption]} }
 			case "q", "ctrl+c":
 				if m.MprisClient != nil {

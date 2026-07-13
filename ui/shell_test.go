@@ -361,8 +361,8 @@ func TestMenu_Render(t *testing.T) {
 	if !strings.Contains(view, "Spt-Flow") {
 		t.Error("Expected menu view to contain 'Spt-Flow'")
 	}
-	if !strings.Contains(view, "Start Spotify + TUI") {
-		t.Error("Expected menu view to contain 'Start Spotify + TUI'")
+	if !strings.Contains(view, "Start with Librespot + TUI") {
+		t.Error("Expected menu view to contain 'Start with Librespot + TUI'")
 	}
 	if !strings.Contains(view, "Open TUI only") {
 		t.Error("Expected menu view to contain 'Open TUI only'")
@@ -372,6 +372,9 @@ func TestMenu_Render(t *testing.T) {
 	}
 	if !strings.Contains(view, "Help / Keybindings") {
 		t.Error("Expected menu view to contain 'Help / Keybindings'")
+	}
+	if !strings.Contains(view, "Start with Spotify Desktop") {
+		t.Error("Expected menu view to contain 'Start with Spotify Desktop'")
 	}
 }
 
@@ -404,30 +407,37 @@ func TestMenu_Navigate(t *testing.T) {
 		t.Errorf("Expected SelectedMenuOption to be 3 after third j key, got %d", resM.SelectedMenuOption)
 	}
 
+	// Press 'j' again to go to 4
+	newM, _ = resM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	resM = newM.(Model)
+	if resM.SelectedMenuOption != 4 {
+		t.Errorf("Expected SelectedMenuOption to be 4 after fourth j key, got %d", resM.SelectedMenuOption)
+	}
+
 	// Press 'j' again - should wrap to 0
 	newM, _ = resM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	resM = newM.(Model)
 	if resM.SelectedMenuOption != 0 {
-		t.Errorf("Expected SelectedMenuOption to wrap to 0 after j at index 3, got %d", resM.SelectedMenuOption)
+		t.Errorf("Expected SelectedMenuOption to wrap to 0 after j at index 4, got %d", resM.SelectedMenuOption)
 	}
 
 	// Press 'k' to go back up
 	newM, _ = resM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
 	resM = newM.(Model)
-	if resM.SelectedMenuOption != 3 {
-		t.Errorf("Expected SelectedMenuOption to be 3 after k key, got %d", resM.SelectedMenuOption)
+	if resM.SelectedMenuOption != 4 {
+		t.Errorf("Expected SelectedMenuOption to be 4 after k key, got %d", resM.SelectedMenuOption)
 	}
 }
 
-func TestMenu_SelectStartSpotify(t *testing.T) {
+func TestMenu_SelectStartLibrespot(t *testing.T) {
 	m := Model{
 		ViewState:          "menu",
-		SelectedMenuOption: 0, // "Start Spotify + TUI"
+		SelectedMenuOption: 0, // "Start with Librespot + TUI"
 		Width:              80,
 		Height:             24,
 	}
 
-	// Press Enter - should emit MenuChoiceMsg with "start-spotify"
+	// Press Enter - should emit MenuChoiceMsg with "start-librespot"
 	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("Expected a command to be returned on Enter key")
@@ -435,8 +445,8 @@ func TestMenu_SelectStartSpotify(t *testing.T) {
 
 	msg := cmd()
 	if menuMsg, ok := msg.(MenuChoiceMsg); ok {
-		if menuMsg.Choice != ChoiceStartSpotify {
-			t.Errorf("Expected MenuChoiceMsg.Choice to be 'start-spotify', got %q", menuMsg.Choice)
+		if menuMsg.Choice != ChoiceStartLibrespot {
+			t.Errorf("Expected MenuChoiceMsg.Choice to be 'start-librespot', got %q", menuMsg.Choice)
 		}
 	} else {
 		t.Fatalf("Expected MenuChoiceMsg, got %T", msg)

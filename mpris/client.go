@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -14,6 +15,12 @@ import (
 
 var ErrFlatpakSandbox = errors.New(
 	"spotify runs in flatpak/snap sandbox; not compatible with this TUI",
+)
+
+var ErrLibrespotNotInstalled = errors.New("librespot not found in PATH")
+
+var ErrSpotifyDesktopRunning = errors.New(
+	"Spotify desktop is running — please close it first",
 )
 
 type Track struct {
@@ -254,4 +261,66 @@ func (c *Client) KillSpotify() error {
 // This allows KillSpotify to terminate the process group on shutdown.
 func (c *Client) SetSpotifyCmd(cmd *exec.Cmd) {
 	c.spotifyCmd = cmd
+}
+
+// ConfigPath returns the default librespot config path.
+func ConfigPath() string {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".config", "tui-spotify", "librespot.conf")
+}
+
+// CacheDir returns the default librespot cache directory.
+func CacheDir() string {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".cache", "librespot")
+}
+
+// IsSpotifyDesktopRunning reports whether org.mpris.MediaPlayer2.spotify
+// is owned by Spotify desktop (not librespot). This is only safe to call
+// BEFORE launching librespot.
+func (c *Client) IsSpotifyDesktopRunning() bool {
+	var owner string
+	err := c.conn.Call("org.freedesktop.DBus.GetNameOwner", 0, "org.mpris.MediaPlayer2.spotify").Store(&owner)
+	return err == nil && owner != ""
+}
+
+// LaunchLibrespot starts the librespot binary with OAuth and returns the
+// cmd so the caller can store it via SetSpotifyCmd. cfg may be empty for
+// the user-default ~/.config/librespot.conf. Returns ErrLibrespotNotInstalled
+// or ErrSpotifyDesktopRunning on the documented conditions.
+func (c *Client) LaunchLibrespot(cfg string) error {
+	path, err := exec.LookPath("librespot")
+	if err != nil {
+		return ErrLibrespotNotInstalled
+	}
+	if c.IsSpotifyDesktopRunning() {
+		return ErrSpotifyDesktopRunning
+	}
+
+	cache := CacheDir()
+	args := []string{
+		"--name", "Spt-Flow",
+		"--enable-oauth",
+		"--cache", cache,
+	}
+	if cfg != "" {
+		args = append(args, "--config", cfg)
+	}
+
+	cmd := exec.Command(path, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start librespot: %w", err)
+	}
+	c.SetSpotifyCmd(cmd)
+	time.Sleep(100 * time.Millisecond)
+	return nil
 }

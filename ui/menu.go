@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	ChoiceStartSpotify = "start-spotify"
-	ChoiceTUIOnly      = "tui-only"
-	ChoiceCheckStatus  = "check-status"
-	ChoiceHelp         = "help"
+	ChoiceStartLibrespot      = "start-librespot"
+	ChoiceStartSpotifyDesktop = "start-spotify-desktop"
+	ChoiceTUIOnly             = "tui-only"
+	ChoiceCheckStatus         = "check-status"
+	ChoiceHelp                = "help"
 )
 
 const menuWidth = 40
@@ -41,11 +42,11 @@ func (m MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "j", "down":
-			m.Selected = (m.Selected + 1) % 4
+			m.Selected = (m.Selected + 1) % 5
 		case "k", "up":
-			m.Selected = (m.Selected - 1 + 4) % 4
+			m.Selected = (m.Selected - 1 + 5) % 5
 		case "enter":
-			choices := []string{ChoiceStartSpotify, ChoiceTUIOnly, ChoiceCheckStatus, ChoiceHelp}
+			choices := []string{ChoiceStartLibrespot, ChoiceTUIOnly, ChoiceCheckStatus, ChoiceHelp, ChoiceStartSpotifyDesktop}
 			return m, func() tea.Msg { return MenuChoiceMsg{Choice: choices[m.Selected]} }
 		case "q":
 			return m, tea.Quit
@@ -81,13 +82,14 @@ func (m MenuModel) View() string {
 		Foreground(DefaultTheme.MenuDim).
 		Align(lipgloss.Center)
 
-	menuContent := fmt.Sprintf("%s\n%s\n\n%s\n%s\n%s\n%s\n\n%s",
+	menuContent := fmt.Sprintf("%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s",
 		titleStyle.Render("Spt-Flow"),
 		subtitleStyle.Render("Spotify TUI Mirror"),
-		renderMenuOption(0, "Start Spotify + TUI", m.Selected, optionStyle, selectedStyle),
+		renderMenuOption(0, "Start with Librespot + TUI", m.Selected, optionStyle, selectedStyle),
 		renderMenuOption(1, "Open TUI only", m.Selected, optionStyle, selectedStyle),
 		renderMenuOption(2, "Check Spotify status", m.Selected, optionStyle, selectedStyle),
 		renderMenuOption(3, "Help / Keybindings", m.Selected, optionStyle, selectedStyle),
+		renderMenuOption(4, "Start with Spotify Desktop", m.Selected, optionStyle, selectedStyle),
 		footerStyle.Render("↑↓ navigate · Enter select · q quit"),
 	)
 
@@ -142,13 +144,14 @@ func renderMenuView(m Model) string {
 		Foreground(DefaultTheme.MenuDim).
 		Align(lipgloss.Center)
 
-	menuContent := fmt.Sprintf("%s\n%s\n\n%s\n%s\n%s\n%s\n\n%s",
+	menuContent := fmt.Sprintf("%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s",
 		titleStyle.Render("Spt-Flow"),
 		subtitleStyle.Render("Spotify TUI Mirror"),
-		renderMenuOption(0, "Start Spotify + TUI", m.SelectedMenuOption, optionStyle, selectedStyle),
+		renderMenuOption(0, "Start with Librespot + TUI", m.SelectedMenuOption, optionStyle, selectedStyle),
 		renderMenuOption(1, "Open TUI only", m.SelectedMenuOption, optionStyle, selectedStyle),
 		renderMenuOption(2, "Check Spotify status", m.SelectedMenuOption, optionStyle, selectedStyle),
 		renderMenuOption(3, "Help / Keybindings", m.SelectedMenuOption, optionStyle, selectedStyle),
+		renderMenuOption(4, "Start with Spotify Desktop", m.SelectedMenuOption, optionStyle, selectedStyle),
 		footerStyle.Render("↑↓ navigate · Enter select · q quit"),
 	)
 
