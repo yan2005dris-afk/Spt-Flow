@@ -1,9 +1,10 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"tui-spotify/lyrics"
@@ -18,9 +19,9 @@ type (
 	TickMsg          struct{}
 	PollTickMsg      struct{}
 	SpotifySignalMsg struct{}
+	MenuChoiceMsg    struct{ Choice string }
+	MenuTimerMsg     struct{}
 )
-
-const launchMaxRetries = 3
 
 type SpotifyStateMsg struct {
 	Running  bool
@@ -37,31 +38,41 @@ type LyricsMsg struct {
 }
 
 type Model struct {
-	MprisClient     *mpris.Client
-	LyricsClient    *lyrics.Client
-	Track           mpris.Track
-	Lyrics          lyrics.Lyrics
-	PlaybackStatus  string
-	Position        time.Duration
-	LastUpdated     time.Time
-	Width, Height   int
-	ScrollOffset    int
-	SpotifyRunning  bool
-	ErrorMessage    string
-	Visualizer      *Visualizer
-	SignalChan      chan *dbus.Signal
-	LaunchedSpotify bool // set true after first successful LaunchSpotify
-	launchRetries   int  // consecutive failed launches; capped at launchMaxRetries
+	MprisClient        *mpris.Client
+	LyricsClient       *lyrics.Client
+	Track              mpris.Track
+	Lyrics             lyrics.Lyrics
+	PlaybackStatus     string
+	Position           time.Duration
+	LastUpdated        time.Time
+	Width, Height      int
+	ScrollOffset       int
+	SpotifyRunning     bool
+	ErrorMessage       string
+	Visualizer         *Visualizer
+	SignalChan         chan *dbus.Signal
+	LaunchedSpotify    bool   // set true after first successful LaunchSpotify
+	ViewState          string // "menu" or "tui"
+	SelectedMenuOption int    // 0-3 for menu navigation
+	ShowingHelp        bool   // for ? overlay
+	HelpTimer          bool   // if true, ? overlay auto-dismisses
+	StatusMessage      string // for check-status option
 }
 
-func NewModel() Model {
+func NewModel(viewState string) Model {
 	return Model{
-		LastUpdated: time.Now(),
-		Visualizer:  NewVisualizer(30, 10),
+		LastUpdated:        time.Now(),
+		Visualizer:         NewVisualizer(30, 10),
+		ViewState:          viewState,
+		SelectedMenuOption: 0,
+		ShowingHelp:        false,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
+	if m.ViewState == "menu" {
+		return nil
+	}
 	return tea.Batch(
 		m.pollSpotifyCmd(),
 		m.tickCmd(),
@@ -146,7 +157,94 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case MenuChoiceMsg:
+		switch msg.Choice {
+		case ChoiceStartSpotify:
+			// Create mpris client and launch Spotify
+			client, err := mpris.NewClient()
+			if err == nil {
+				m.MprisClient = client
+				if !m.MprisClient.IsRunning() {
+					cmd := exec.Command("spotify")
+					cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+					if startErr := cmd.Start(); startErr == nil {
+						m.MprisClient.SetSpotifyCmd(cmd)
+						m.LaunchedSpotify = true
+					}
+				}
+			}
+			m.ViewState = "tui"
+			return m, tea.Batch(m.pollSpotifyCmd(), m.tickCmd(), pollTickCmd())
+
+		case ChoiceTUIOnly:
+			m.ViewState = "tui"
+			m.LaunchedSpotify = false
+			return m, tea.Batch(m.pollSpotifyCmd(), m.tickCmd(), pollTickCmd())
+
+		case ChoiceCheckStatus:
+			if m.MprisClient == nil {
+				client, err := mpris.NewClient()
+				if err == nil {
+					m.MprisClient = client
+				}
+			}
+			if m.MprisClient != nil {
+				if m.MprisClient.IsRunning() {
+					m.StatusMessage = "Spotify is running"
+				} else {
+					m.StatusMessage = "Spotify is not running"
+				}
+			} else {
+				m.StatusMessage = "Unable to connect to D-Bus"
+			}
+			return m, menuTickCmd(3 * time.Second)
+
+		case ChoiceHelp:
+			m.ShowingHelp = true
+			return m, menuTickCmd(5 * time.Second)
+		}
+		return m, nil
+
+	case MenuTimerMsg:
+		if m.ShowingHelp {
+			m.ShowingHelp = false
+			return m, nil
+		}
+		m.ViewState = "tui"
+		return m, nil
+
 	case tea.KeyMsg:
+		// Handle help overlay dismissal
+		if m.ShowingHelp {
+			m.ShowingHelp = false
+			return m, nil
+		}
+
+		// Menu navigation
+		if m.ViewState == "menu" {
+			switch msg.String() {
+			case "j", "down":
+				m.SelectedMenuOption = (m.SelectedMenuOption + 1) % 4
+			case "k", "up":
+				m.SelectedMenuOption = (m.SelectedMenuOption - 1 + 4) % 4
+			case "enter":
+				choices := []string{ChoiceStartSpotify, ChoiceTUIOnly, ChoiceCheckStatus, ChoiceHelp}
+				return m, func() tea.Msg { return MenuChoiceMsg{Choice: choices[m.SelectedMenuOption]} }
+			case "q", "ctrl+c":
+				if m.MprisClient != nil {
+					m.MprisClient.Close()
+				}
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+
+		// ? key shows help overlay in TUI state
+		if msg.String() == "?" {
+			m.ShowingHelp = true
+			return m, menuTickCmd(5 * time.Second)
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			if m.MprisClient != nil {
@@ -206,6 +304,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	if m.ViewState == "menu" {
+		return renderMenuView(m)
+	}
+
+	if m.ShowingHelp {
+		return renderKeybindingsOverlay(m)
+	}
+
 	if !m.SpotifyRunning {
 		return lipgloss.NewStyle().
 			Width(m.Width).
@@ -311,25 +417,6 @@ func (m *Model) pollSpotifyCmd() tea.Cmd {
 		}
 
 		if !m.MprisClient.IsRunning() {
-			// Attempt to launch Spotify the FIRST time (and on retries).
-			if !m.LaunchedSpotify && m.launchRetries < launchMaxRetries {
-				if err := m.MprisClient.LaunchSpotify(); err != nil {
-					if errors.Is(err, mpris.ErrFlatpakSandbox) {
-						m.ErrorMessage =
-							"Spotify is running as Flatpak/Snap — not compatible with this TUI"
-						m.SpotifyRunning = false
-						return SpotifyStateMsg{Running: false, Err: err}
-					}
-					m.launchRetries++
-					if m.launchRetries >= launchMaxRetries {
-						m.ErrorMessage = "Failed to launch Spotify after 3 attempts"
-						m.SpotifyRunning = false
-						return SpotifyStateMsg{Running: false, Err: err}
-					}
-					return SpotifyStateMsg{Running: false, Err: err}
-				}
-				m.LaunchedSpotify = true
-			}
 			return SpotifyStateMsg{Running: false}
 		}
 

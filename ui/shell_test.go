@@ -134,7 +134,7 @@ func TestShell_SpotifyOfflineFallback(t *testing.T) {
 }
 
 func TestShell_Update_WindowSize(t *testing.T) {
-	m := NewModel()
+	m := NewModel("tui")
 	newM, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	resM := newM.(Model)
 
@@ -180,7 +180,7 @@ func TestShell_Update_KeyboardEvents(t *testing.T) {
 }
 
 func TestShell_Update_StateMessages(t *testing.T) {
-	m := NewModel()
+	m := NewModel("tui")
 
 	// 1. Spotify State Msg (running = true)
 	track := mpris.Track{ID: "track-123", Title: "Song", Duration: 200 * time.Second}
@@ -302,7 +302,7 @@ func TestShell_renderFooter_SpotifyNotRunning(t *testing.T) {
 }
 
 func TestShell_fetchLyricsCmd_Success(t *testing.T) {
-	m := NewModel()
+	m := NewModel("tui")
 	cmd := m.fetchLyricsCmd(mpris.Track{
 		Title:    "Test Song",
 		Artist:   "Test Artist",
@@ -347,5 +347,172 @@ func TestShell_scrollUp_Bounds(t *testing.T) {
 	m.scrollUp()
 	if m.ScrollOffset != 0 {
 		t.Errorf("ScrollOffset should stay at 0, got %d", m.ScrollOffset)
+	}
+}
+
+func TestMenu_Render(t *testing.T) {
+	m := Model{
+		ViewState:          "menu",
+		SelectedMenuOption: 0,
+		Width:              80,
+		Height:             24,
+	}
+	view := m.View()
+	if !strings.Contains(view, "Spt-Flow") {
+		t.Error("Expected menu view to contain 'Spt-Flow'")
+	}
+	if !strings.Contains(view, "Start Spotify + TUI") {
+		t.Error("Expected menu view to contain 'Start Spotify + TUI'")
+	}
+	if !strings.Contains(view, "Open TUI only") {
+		t.Error("Expected menu view to contain 'Open TUI only'")
+	}
+	if !strings.Contains(view, "Check Spotify status") {
+		t.Error("Expected menu view to contain 'Check Spotify status'")
+	}
+	if !strings.Contains(view, "Help / Keybindings") {
+		t.Error("Expected menu view to contain 'Help / Keybindings'")
+	}
+}
+
+func TestMenu_Navigate(t *testing.T) {
+	m := Model{
+		ViewState:          "menu",
+		SelectedMenuOption: 0,
+		Width:              80,
+		Height:             24,
+	}
+
+	// Press 'j' to go down
+	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	resM := newM.(Model)
+	if resM.SelectedMenuOption != 1 {
+		t.Errorf("Expected SelectedMenuOption to be 1 after j key, got %d", resM.SelectedMenuOption)
+	}
+
+	// Press 'j' again to go to 2
+	newM, _ = resM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	resM = newM.(Model)
+	if resM.SelectedMenuOption != 2 {
+		t.Errorf("Expected SelectedMenuOption to be 2 after second j key, got %d", resM.SelectedMenuOption)
+	}
+
+	// Press 'j' again to go to 3
+	newM, _ = resM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	resM = newM.(Model)
+	if resM.SelectedMenuOption != 3 {
+		t.Errorf("Expected SelectedMenuOption to be 3 after third j key, got %d", resM.SelectedMenuOption)
+	}
+
+	// Press 'j' again - should wrap to 0
+	newM, _ = resM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	resM = newM.(Model)
+	if resM.SelectedMenuOption != 0 {
+		t.Errorf("Expected SelectedMenuOption to wrap to 0 after j at index 3, got %d", resM.SelectedMenuOption)
+	}
+
+	// Press 'k' to go back up
+	newM, _ = resM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	resM = newM.(Model)
+	if resM.SelectedMenuOption != 3 {
+		t.Errorf("Expected SelectedMenuOption to be 3 after k key, got %d", resM.SelectedMenuOption)
+	}
+}
+
+func TestMenu_SelectStartSpotify(t *testing.T) {
+	m := Model{
+		ViewState:          "menu",
+		SelectedMenuOption: 0, // "Start Spotify + TUI"
+		Width:              80,
+		Height:             24,
+	}
+
+	// Press Enter - should emit MenuChoiceMsg with "start-spotify"
+	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Expected a command to be returned on Enter key")
+	}
+
+	msg := cmd()
+	if menuMsg, ok := msg.(MenuChoiceMsg); ok {
+		if menuMsg.Choice != ChoiceStartSpotify {
+			t.Errorf("Expected MenuChoiceMsg.Choice to be 'start-spotify', got %q", menuMsg.Choice)
+		}
+	} else {
+		t.Fatalf("Expected MenuChoiceMsg, got %T", msg)
+	}
+
+	// After processing, ViewState should still be "menu" until the MenuChoiceMsg is handled
+	resM := newM.(Model)
+	_ = resM // model state hasn't changed yet - that's correct
+}
+
+func TestMenu_HelpOverlay(t *testing.T) {
+	m := Model{
+		ViewState:   "tui",
+		ShowingHelp: false,
+		Width:       80,
+		Height:      24,
+	}
+
+	// Press '?' to show help overlay
+	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	resM := newM.(Model)
+	if !resM.ShowingHelp {
+		t.Error("Expected ShowingHelp to be true after '?' key")
+	}
+
+	// Press any key to dismiss overlay
+	newM, _ = resM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	resM = newM.(Model)
+	if resM.ShowingHelp {
+		t.Error("Expected ShowingHelp to be false after any key")
+	}
+}
+
+func TestMenu_TimerDismiss(t *testing.T) {
+	// Test help overlay dismissal via timer
+	m := Model{
+		ViewState:   "menu",
+		ShowingHelp: true,
+		Width:       80,
+		Height:      24,
+	}
+
+	// Send MenuTimerMsg - should dismiss help overlay
+	newM, _ := m.Update(MenuTimerMsg{})
+	resM := newM.(Model)
+	if resM.ShowingHelp {
+		t.Error("Expected ShowingHelp to be false after MenuTimerMsg")
+	}
+
+	// Test transition to TUI via timer (when not showing help)
+	m2 := Model{
+		ViewState:   "menu",
+		ShowingHelp: false,
+		Width:       80,
+		Height:      24,
+	}
+
+	newM2, _ := m2.Update(MenuTimerMsg{})
+	resM2 := newM2.(Model)
+	if resM2.ViewState != "tui" {
+		t.Error("Expected ViewState to transition to 'tui' after MenuTimerMsg when not showing help")
+	}
+}
+
+func TestMenu_TUIView(t *testing.T) {
+	m := Model{
+		ViewState:      "tui",
+		ShowingHelp:    false,
+		SpotifyRunning: false,
+		Width:          80,
+		Height:         24,
+	}
+
+	view := m.View()
+	// In tui state with Spotify not running, should show "Waiting for Spotify..."
+	if !strings.Contains(view, "Waiting for Spotify...") {
+		t.Error("Expected TUI view to show 'Waiting for Spotify...' when Spotify not running")
 	}
 }

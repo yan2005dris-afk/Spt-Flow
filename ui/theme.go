@@ -11,6 +11,11 @@ type Theme struct {
 	Visualizer    lipgloss.ANSIColor
 	Error         lipgloss.ANSIColor
 	Waiting       lipgloss.ANSIColor
+	MenuTitle     lipgloss.ANSIColor
+	MenuOption    lipgloss.ANSIColor
+	MenuSelected  lipgloss.ANSIColor
+	MenuDim       lipgloss.ANSIColor
+	MenuBorder    lipgloss.ANSIColor
 }
 
 var DefaultTheme = Theme{
@@ -22,4 +27,9 @@ var DefaultTheme = Theme{
 	Visualizer:    lipgloss.ANSIColor(8),
 	Error:         lipgloss.ANSIColor(9),
 	Waiting:       lipgloss.ANSIColor(7),
+	MenuTitle:     lipgloss.ANSIColor(15),
+	MenuOption:    lipgloss.ANSIColor(7),
+	MenuSelected:  lipgloss.ANSIColor(12),
+	MenuDim:       lipgloss.ANSIColor(8),
+	MenuBorder:    lipgloss.ANSIColor(8),
 }

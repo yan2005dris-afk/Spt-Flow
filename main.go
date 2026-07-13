@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 
@@ -20,20 +19,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Pre-launch Spotify ONLY when it isn't already running. We hold the
-	// exec.Cmd handle on the Client so KillSpotify can use it later.
-	// SysProcAttr{Setpgid: true} is mandatory: it isolates the Spotify
-	// process group so SIGTERM does not propagate back into the TUI.
-	if !mprisClient.IsRunning() {
-		cmd := exec.Command("spotify")
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		if startErr := cmd.Start(); startErr == nil {
-			mprisClient.SetSpotifyCmd(cmd)
+	// Determine initial view state based on --no-menu flag
+	viewState := "menu"
+	for _, arg := range os.Args[1:] {
+		if arg == "--no-menu" {
+			viewState = "tui"
+			break
 		}
-		// cmd.Start() failure is non-fatal: LaunchSpotify will retry via D-Bus.
 	}
 
-	p := tea.NewProgram(ui.NewModel(), tea.WithAltScreen())
+	p := tea.NewProgram(ui.NewModel(viewState), tea.WithAltScreen())
 
 	// Signal trap: catch Ctrl+C and SIGTERM before the bubble tea loop
 	// swallows them. KillSpotify is safe to call even when spotifyCmd is nil.
