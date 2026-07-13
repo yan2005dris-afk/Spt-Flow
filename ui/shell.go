@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ type (
 	SpotifySignalMsg struct{}
 )
 
+const launchMaxRetries = 3
+
 type SpotifyStateMsg struct {
 	Running  bool
 	Track    mpris.Track
@@ -34,19 +37,21 @@ type LyricsMsg struct {
 }
 
 type Model struct {
-	MprisClient    *mpris.Client
-	LyricsClient   *lyrics.Client
-	Track          mpris.Track
-	Lyrics         lyrics.Lyrics
-	PlaybackStatus string
-	Position       time.Duration
-	LastUpdated    time.Time
-	Width, Height  int
-	ScrollOffset   int
-	SpotifyRunning bool
-	ErrorMessage   string
-	Visualizer     *Visualizer
-	SignalChan     chan *dbus.Signal
+	MprisClient     *mpris.Client
+	LyricsClient    *lyrics.Client
+	Track           mpris.Track
+	Lyrics          lyrics.Lyrics
+	PlaybackStatus  string
+	Position        time.Duration
+	LastUpdated     time.Time
+	Width, Height   int
+	ScrollOffset    int
+	SpotifyRunning  bool
+	ErrorMessage    string
+	Visualizer      *Visualizer
+	SignalChan      chan *dbus.Signal
+	LaunchedSpotify bool // set true after first successful LaunchSpotify
+	launchRetries   int  // consecutive failed launches; capped at launchMaxRetries
 }
 
 func NewModel() Model {
@@ -306,6 +311,25 @@ func (m *Model) pollSpotifyCmd() tea.Cmd {
 		}
 
 		if !m.MprisClient.IsRunning() {
+			// Attempt to launch Spotify the FIRST time (and on retries).
+			if !m.LaunchedSpotify && m.launchRetries < launchMaxRetries {
+				if err := m.MprisClient.LaunchSpotify(); err != nil {
+					if errors.Is(err, mpris.ErrFlatpakSandbox) {
+						m.ErrorMessage =
+							"Spotify is running as Flatpak/Snap — not compatible with this TUI"
+						m.SpotifyRunning = false
+						return SpotifyStateMsg{Running: false, Err: err}
+					}
+					m.launchRetries++
+					if m.launchRetries >= launchMaxRetries {
+						m.ErrorMessage = "Failed to launch Spotify after 3 attempts"
+						m.SpotifyRunning = false
+						return SpotifyStateMsg{Running: false, Err: err}
+					}
+					return SpotifyStateMsg{Running: false, Err: err}
+				}
+				m.LaunchedSpotify = true
+			}
 			return SpotifyStateMsg{Running: false}
 		}
 
@@ -355,7 +379,7 @@ func (m *Model) fetchLyricsCmd(track mpris.Track) tea.Cmd {
 func renderHeader(m Model) string {
 	style := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("15")).
+		Foreground(DefaultTheme.Header).
 		Padding(0, 1)
 
 	trackInfo := fmt.Sprintf("%s - %s", m.Track.Title, m.Track.Artist)
@@ -391,10 +415,14 @@ func renderFooter(m Model) string {
 
 	info := fmt.Sprintf("%s %s %s [%d%% Volume]", posStr, pb, durStr, volPercent)
 
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("12")).
-		Padding(0, 1).
-		Render(info)
+	footerStyle := lipgloss.NewStyle().
+		Padding(0, 1)
+	if !m.SpotifyRunning {
+		footerStyle = footerStyle.Foreground(DefaultTheme.Waiting)
+	} else {
+		footerStyle = footerStyle.Foreground(DefaultTheme.Footer)
+	}
+	return footerStyle.Render(info)
 }
 
 func renderProgressBar(width int, pos, dur time.Duration) string {
@@ -423,7 +451,11 @@ func formatDuration(d time.Duration) string {
 func renderLyrics(m Model, width, height int) string {
 	if len(m.Lyrics.Lines) == 0 {
 		if m.ErrorMessage != "" {
-			return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render("Error: " + m.ErrorMessage)
+			return lipgloss.NewStyle().
+				Width(width).
+				Align(lipgloss.Center).
+				Foreground(DefaultTheme.Error).
+				Render("Error: " + m.ErrorMessage)
 		}
 		return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render("No lyrics available")
 	}
@@ -448,9 +480,9 @@ func renderLyrics(m Model, width, height int) string {
 
 				style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center)
 				if lineIdx == active {
-					style = style.Foreground(lipgloss.Color("12")).Bold(true)
+					style = style.Foreground(DefaultTheme.LyricActive).Bold(true)
 				} else {
-					style = style.Foreground(lipgloss.Color("15"))
+					style = style.Foreground(DefaultTheme.LyricInactive)
 				}
 				renderedLines = append(renderedLines, style.Render(content))
 			} else {
@@ -466,7 +498,7 @@ func renderLyrics(m Model, width, height int) string {
 				if len(content) > width {
 					content = content[:width]
 				}
-				style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Foreground(lipgloss.Color("7"))
+				style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Foreground(DefaultTheme.LyricPlain)
 				renderedLines = append(renderedLines, style.Render(content))
 			} else {
 				renderedLines = append(renderedLines, "")
@@ -484,7 +516,7 @@ func renderVisualizer(m Model, width, height int) string {
 		m.Visualizer = NewVisualizer(width, float64(height))
 	}
 	lines := m.Visualizer.Render(height)
-	style := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	style := lipgloss.NewStyle().Foreground(DefaultTheme.Visualizer)
 	var styledLines []string
 	for _, l := range lines {
 		styledLines = append(styledLines, style.Render(l))

@@ -70,7 +70,7 @@ func TestShell_LyricHighlighting(t *testing.T) {
 			Lines:  lines,
 			Synced: true,
 		},
-		Position: 15 * time.Second, // between 5s and 10s -> "First verse" is active
+		Position: 7 * time.Second, // 7s lies in [5s, 10s) -> active index 1 ("First verse")
 	}
 
 	activeIdx := m.getActiveLyricIndex()

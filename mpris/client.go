@@ -1,11 +1,19 @@
 package mpris
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/godbus/dbus/v5"
+)
+
+var ErrFlatpakSandbox = errors.New(
+	"spotify runs in flatpak/snap sandbox; not compatible with this TUI",
 )
 
 type Track struct {
@@ -66,9 +74,10 @@ func (c *realDBusConnection) Signal(ch chan<- *dbus.Signal) {
 }
 
 type Client struct {
-	conn     DBusConnection
-	obj      DBusObject
-	realConn *dbus.Conn
+	conn       DBusConnection
+	obj        DBusObject
+	realConn   *dbus.Conn
+	spotifyCmd *exec.Cmd // nil when TUI did not launch the process
 }
 
 func NewClient() (*Client, error) {
@@ -79,13 +88,19 @@ func NewClient() (*Client, error) {
 	adapterConn := &realDBusConnection{conn: conn}
 	obj := adapterConn.Object("org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2")
 	return &Client{
-		conn:     adapterConn,
-		obj:      obj,
-		realConn: conn,
+		conn:       adapterConn,
+		obj:        obj,
+		realConn:   conn,
+		spotifyCmd: nil,
 	}, nil
 }
 
 func (c *Client) Close() error {
+	// Always clean up the subprocess handle first so we don't leak a
+	// Spotify that the TUI started but couldn't kill on exit.
+	if c.spotifyCmd != nil {
+		_ = c.KillSpotify()
+	}
 	if c.realConn != nil {
 		return c.realConn.Close()
 	}
@@ -204,4 +219,39 @@ func (c *Client) Watch() (chan *dbus.Signal, error) {
 	ch := make(chan *dbus.Signal, 100)
 	c.conn.Signal(ch)
 	return ch, nil
+}
+
+// LaunchSpotify asks D-Bus to activate the Spotify MPRIS service. Returns
+// ErrFlatpakSandbox when the running Spotify is sandboxed and unreachable
+// from the user's session bus; the caller MUST stop polling on this error.
+func (c *Client) LaunchSpotify() error {
+	if os.Getenv("FLATPAK_ID") != "" && !c.IsRunning() {
+		return ErrFlatpakSandbox
+	}
+	if os.Getenv("SNAP_NAME") != "" && !c.IsRunning() {
+		return ErrFlatpakSandbox
+	}
+	call := c.conn.Call(
+		"org.freedesktop.DBus.StartServiceByName",
+		0,
+		"org.mpris.MediaPlayer2.spotify",
+		uint32(0),
+	)
+	return call.Err
+}
+
+// KillSpotify sends SIGTERM to the TUI-launched Spotify process group.
+// Negative PID addresses the whole pgid (requires Setpgid: true on Cmd).
+// Safe to call when spotifyCmd is nil — no-op.
+func (c *Client) KillSpotify() error {
+	if c.spotifyCmd == nil || c.spotifyCmd.Process == nil {
+		return nil
+	}
+	return syscall.Kill(-c.spotifyCmd.Process.Pid, syscall.SIGTERM)
+}
+
+// SetSpotifyCmd stores the exec.Cmd for a Spotify process started by main.go.
+// This allows KillSpotify to terminate the process group on shutdown.
+func (c *Client) SetSpotifyCmd(cmd *exec.Cmd) {
+	c.spotifyCmd = cmd
 }

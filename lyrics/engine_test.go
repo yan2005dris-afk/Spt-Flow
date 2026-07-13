@@ -206,5 +206,3 @@ func TestFetchLyrics_FallbackToSearch(t *testing.T) {
 		t.Errorf("Expected Content 'Search synced line', got %q", lyrics.Lines[0].Content)
 	}
 }
-
-

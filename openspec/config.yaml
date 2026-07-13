@@ -1,0 +1,64 @@
+# SDD Configuration — Spt-Flow
+
+project: tui-spotify
+language: go
+module: tui-spotify
+go_version: "1.26.5"
+
+# Stack
+dependencies:
+  - github.com/charmbracelet/bubbletea v1.3.10
+  - github.com/charmbracelet/lipgloss v1.1.0
+  - github.com/godbus/dbus/v5 v5.2.2
+
+# Testing
+testing:
+  strict_tdd: false
+  test_command: "go test ./..."
+  coverage_command: "go test -cover ./..."
+  framework: "go testing package"
+  current_coverage:
+    lyrics: 86.2%
+    mpris: 47.2%
+    ui: 52.0%
+  failing_tests:
+    - ui/shell_test.go: TestShell_LyricHighlighting
+
+# Quality
+quality:
+  linter: null
+  type_checker: "go vet ./..."
+  formatter: "gofmt -d ."
+
+# Structure
+packages:
+  - ui/
+  - mpris/
+  - lyrics/
+
+# Phase rules
+phases:
+  proposal:
+    output: openspec/specs/
+  spec:
+    output: openspec/specs/
+    requires: [proposal]
+  design:
+    output: openspec/changes/
+    requires: [spec]
+  tasks:
+    output: openspec/changes/
+    requires: [design]
+  apply:
+    output: workspace
+    requires: [tasks]
+  verify:
+    requires: [apply]
+  archive:
+    output: openspec/changes/archive/
+
+# Context (concise)
+context: |
+  Spt-Flow is a Spotify TUI mirror using Bubble Tea + Lip Gloss,
+  communicating with Spotify via MPRIS D-Bus. Existing sdd/ artifacts
+  moved to openspec/ structure. One failing test needs investigation.
