@@ -109,6 +109,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
+		// Update visualizer dimensions to match new terminal size.
+		// This persists across calls since Update() returns the modified m.
+		visMaxHeight := 10.0
+		if m.Width >= 80 {
+			visMaxHeight = 3.0
+		}
+		if m.Visualizer == nil || m.Visualizer.Width != m.Width || m.Visualizer.MaxHeight != visMaxHeight {
+			m.Visualizer = NewVisualizer(m.Width, visMaxHeight)
+		}
 		return m, nil
 
 	case TickMsg:
@@ -396,17 +405,26 @@ func (m Model) View() string {
 		mainHeight = 0
 	}
 
+	// Lyrics fill the main area, visualizer bars at bottom (when playing + wide screen).
 	var mainArea string
-	if m.Width >= 80 {
-		lyricsWidth := m.Width - 32
-		visWidth := 30
-		mainArea = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			renderLyrics(m, lyricsWidth, mainHeight),
-			renderVisualizer(m, visWidth, mainHeight),
-		)
+	showVis := m.Width >= 80 && m.PlaybackStatus == "Playing"
+	visRow := 0
+	if showVis {
+		visRow = 3
+	}
+
+	lyricsHeight := mainHeight - visRow
+	if lyricsHeight < 3 {
+		lyricsHeight = mainHeight
+		visRow = 0
+	}
+
+	lyricsContent := renderLyrics(m, m.Width, lyricsHeight)
+	if visRow > 0 {
+		visBars := renderVisualizer(m, m.Width, visRow)
+		mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visBars)
 	} else {
-		mainArea = renderLyrics(m, m.Width, mainHeight)
+		mainArea = lyricsContent
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, mainArea, footer)
@@ -678,16 +696,17 @@ func renderVisualizer(m Model, width, height int) string {
 	lines := m.Visualizer.Render(height)
 
 	// Use VisualizerBackground color for audio-driven mode,
-	// and Visualizer color for procedural mode.
-	color := DefaultTheme.Visualizer
-	if m.Visualizer.AudioCapture != nil {
-		color = DefaultTheme.VisualizerBackground
-	}
-
-	style := lipgloss.NewStyle().Foreground(color)
+	// Use raw ANSI codes instead of lipgloss to avoid rendering issues.
+	// \x1b[93m = bright yellow, \x1b[0m = reset
+	ansiColor := "\x1b[93m" // bright yellow - highly visible
+	ansiReset := "\x1b[0m"
 	var styledLines []string
 	for _, l := range lines {
-		styledLines = append(styledLines, style.Render(l))
+		if l != "" {
+			styledLines = append(styledLines, ansiColor+l+ansiReset)
+		} else {
+			styledLines = append(styledLines, l)
+		}
 	}
 	return strings.Join(styledLines, "\n")
 }

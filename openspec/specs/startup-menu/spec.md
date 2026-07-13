@@ -4,7 +4,7 @@
 
 Pre-TUI selection screen letting the user choose how to interact with Spotify before the main TUI renders.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: ViewState field on Model
 
