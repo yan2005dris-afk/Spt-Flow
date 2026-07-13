@@ -423,11 +423,13 @@ func (m Model) View() string {
 		mainHeight = 0
 	}
 
-	// Lyrics fill the main area, visualizer bars at bottom (when playing + wide screen).
+	// Lyrics fill the main area minus a fixed visualizer strip below.
+	// The visualizer area is ALWAYS reserved (when wide enough) so lyrics
+	// don't shift when the visualizer appears/disappears (e.g. on track
+	// change when playback status flips).
 	var mainArea string
-	showVis := m.Width >= 80 && m.PlaybackStatus == "Playing"
 	visRow := 0
-	if showVis {
+	if m.Width >= 80 {
 		visRow = 3
 	}
 
@@ -439,8 +441,15 @@ func (m Model) View() string {
 
 	lyricsContent := renderLyrics(m, m.Width, lyricsHeight)
 	if visRow > 0 {
-		visBars := renderVisualizer(m, m.Width, visRow)
-		mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visBars)
+		var visContent string
+		if m.PlaybackStatus == "Playing" {
+			visContent = renderVisualizer(m, m.Width, visRow)
+		} else {
+			// Reserve the visualizer area with blank lines so the layout
+			// stays put when playback toggles.
+			visContent = strings.Repeat("\n", visRow-1)
+		}
+		mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visContent)
 	} else {
 		mainArea = lyricsContent
 	}
