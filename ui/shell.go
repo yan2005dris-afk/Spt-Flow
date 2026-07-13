@@ -396,16 +396,24 @@ func (m Model) View() string {
 		mainHeight = 0
 	}
 
-	// Side-by-side layout: lyrics left, visualizer right.
+	// Lyrics above, visualizer bars below (non-intrusive).
+	// Only on wide screens (>=80 cols) to leave room for lyrics.
 	var mainArea string
 	if m.Width >= 80 {
-		lyricsWidth := m.Width - 32
-		visWidth := 30
-		mainArea = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			renderLyrics(m, lyricsWidth, mainHeight),
-			renderVisualizer(m, visWidth, mainHeight),
-		)
+		visRowHeight := 4
+		contentHeight := mainHeight - visRowHeight
+		if contentHeight < 5 {
+			contentHeight = mainHeight
+			visRowHeight = 0
+		}
+
+		lyricsContent := renderLyrics(m, m.Width, contentHeight)
+		if visRowHeight > 0 {
+			visContent := renderVisualizer(m, m.Width, visRowHeight)
+			mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visContent)
+		} else {
+			mainArea = lyricsContent
+		}
 	} else {
 		mainArea = renderLyrics(m, m.Width, mainHeight)
 	}
