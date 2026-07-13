@@ -109,6 +109,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
+		// Update visualizer dimensions to match new terminal size.
+		// This persists across calls since Update() returns the modified m.
+		visMaxHeight := 10.0
+		if m.Width >= 80 {
+			visMaxHeight = 3.0
+		}
+		if m.Visualizer == nil || m.Visualizer.Width != m.Width || m.Visualizer.MaxHeight != visMaxHeight {
+			m.Visualizer = NewVisualizer(m.Width, visMaxHeight)
+		}
 		return m, nil
 
 	case TickMsg:
@@ -396,12 +405,12 @@ func (m Model) View() string {
 		mainHeight = 0
 	}
 
-	// Lyrics fill the main area, visualizer bars at bottom (always when wide screen).
+	// Lyrics fill the main area, visualizer bars at bottom (when playing + wide screen).
 	var mainArea string
-	visRow := 3
-	showVis := m.Width >= 80 && visRow < mainHeight
-	if !showVis {
-		visRow = 0
+	showVis := m.Width >= 80 && m.PlaybackStatus == "Playing"
+	visRow := 0
+	if showVis {
+		visRow = 3
 	}
 
 	lyricsHeight := mainHeight - visRow
@@ -412,20 +421,8 @@ func (m Model) View() string {
 
 	lyricsContent := renderLyrics(m, m.Width, lyricsHeight)
 	if visRow > 0 {
-		// DEBUG: hardcoded test bars to confirm rendering
-		testBars := strings.Repeat("\x1b[93m#\x1b[0m", m.Width)
-		var testVisualizer strings.Builder
-		for i := 0; i < visRow; i++ {
-			if i == visRow-1 {
-				testVisualizer.WriteString(testBars)
-			} else {
-				testVisualizer.WriteString(strings.Repeat(" ", m.Width))
-			}
-			if i < visRow-1 {
-				testVisualizer.WriteString("\n")
-			}
-		}
-		mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, testVisualizer.String())
+		visBars := renderVisualizer(m, m.Width, visRow)
+		mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visBars)
 	} else {
 		mainArea = lyricsContent
 	}
