@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -69,9 +70,23 @@ func mustHome() string {
 }
 
 func NewModel(viewState string) Model {
+	ctx, cancel := context.WithCancel(context.Background())
+	_ = cancel // cancel will be called on quit
+
+	visualizer := NewVisualizer(30, 10)
+
+	// Try to initialize audio capture
+	audioCapture, _ := NewAudioCapture(ctx)
+	if audioCapture != nil {
+		visualizer.AudioCapture = audioCapture
+		visualizer.DFT = NewDFT()
+		visualizer.AudioData = make([]float64, DFTBands)
+		visualizer.sampleBuf = make([]float32, DFTInputSize)
+	}
+
 	return Model{
 		LastUpdated:        time.Now(),
-		Visualizer:         NewVisualizer(30, 10),
+		Visualizer:         visualizer,
 		ViewState:          viewState,
 		SelectedMenuOption: 0,
 		ShowingHelp:        false,
@@ -272,6 +287,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.MprisClient != nil {
 					m.MprisClient.Close()
 				}
+				if m.Visualizer != nil && m.Visualizer.AudioCapture != nil {
+					m.Visualizer.AudioCapture.Close()
+				}
 				return m, tea.Quit
 			}
 			return m, nil
@@ -294,6 +312,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			if m.MprisClient != nil {
 				m.MprisClient.Close()
+			}
+			if m.Visualizer != nil && m.Visualizer.AudioCapture != nil {
+				m.Visualizer.AudioCapture.Close()
 			}
 			return m, tea.Quit
 		}
@@ -655,7 +676,15 @@ func renderVisualizer(m Model, width, height int) string {
 		m.Visualizer = NewVisualizer(width, float64(height))
 	}
 	lines := m.Visualizer.Render(height)
-	style := lipgloss.NewStyle().Foreground(DefaultTheme.Visualizer)
+
+	// Use VisualizerBackground color for audio-driven mode,
+	// and Visualizer color for procedural mode.
+	color := DefaultTheme.Visualizer
+	if m.Visualizer.AudioCapture != nil {
+		color = DefaultTheme.VisualizerBackground
+	}
+
+	style := lipgloss.NewStyle().Foreground(color)
 	var styledLines []string
 	for _, l := range lines {
 		styledLines = append(styledLines, style.Render(l))

@@ -9,6 +9,12 @@ type Visualizer struct {
 	MaxHeight float64
 	Heights   []float64
 	Tick      int
+
+	// Audio integration
+	AudioCapture *AudioCapture
+	DFT          *DFT
+	AudioData    []float64
+	sampleBuf    []float32
 }
 
 func NewVisualizer(width int, maxHeight float64) *Visualizer {
@@ -21,25 +27,50 @@ func NewVisualizer(width int, maxHeight float64) *Visualizer {
 }
 
 func (v *Visualizer) Update(playing bool) {
-	if playing {
-		v.Tick++
-		for i := 0; i < v.Width; i++ {
-			fi := 0.05 + 0.15*(float64(i)/float64(v.Width))
-			t := float64(v.Tick)
-			hi := v.MaxHeight * (0.5 + 0.4*math.Sin(fi*t+float64(i)) + 0.1*math.Cos(fi*2.3*t))
-			if hi < 0 {
-				hi = 0
+	if v.AudioCapture != nil && v.DFT != nil {
+		// Audio mode: read samples and compute DFT
+		if v.sampleBuf == nil {
+			v.sampleBuf = make([]float32, DFTInputSize)
+		}
+		if v.AudioData == nil {
+			v.AudioData = make([]float64, DFTBands)
+		}
+
+		n := v.AudioCapture.Read(v.sampleBuf)
+		if n >= DFTInputSize {
+			// We have enough samples, compute DFT
+			result := v.DFT.Compute(v.sampleBuf)
+			copy(v.AudioData, result)
+		}
+
+		// Use AudioData to drive heights (nearest bin mapping)
+		if len(v.AudioData) >= v.Width {
+			for i := 0; i < v.Width; i++ {
+				v.Heights[i] = v.AudioData[i] * v.MaxHeight
 			}
-			if hi > v.MaxHeight {
-				hi = v.MaxHeight
-			}
-			v.Heights[i] = hi
 		}
 	} else {
-		for i := 0; i < v.Width; i++ {
-			v.Heights[i] = v.Heights[i] * 0.8
-			if v.Heights[i] < 0.01 {
-				v.Heights[i] = 0
+		// Procedural mode: original sine wave behavior
+		if playing {
+			v.Tick++
+			for i := 0; i < v.Width; i++ {
+				fi := 0.05 + 0.15*(float64(i)/float64(v.Width))
+				t := float64(v.Tick)
+				hi := v.MaxHeight * (0.5 + 0.4*math.Sin(fi*t+float64(i)) + 0.1*math.Cos(fi*2.3*t))
+				if hi < 0 {
+					hi = 0
+				}
+				if hi > v.MaxHeight {
+					hi = v.MaxHeight
+				}
+				v.Heights[i] = hi
+			}
+		} else {
+			for i := 0; i < v.Width; i++ {
+				v.Heights[i] = v.Heights[i] * 0.8
+				if v.Heights[i] < 0.01 {
+					v.Heights[i] = 0
+				}
 			}
 		}
 	}
