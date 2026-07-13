@@ -20,11 +20,19 @@ const (
 
 const menuWidth = 40
 
+var menuChoices = []string{
+	ChoiceStartLibrespot,
+	ChoiceTUIOnly,
+	ChoiceCheckStatus,
+	ChoiceCycleTheme,
+	ChoiceHelp,
+	ChoiceStartSpotifyDesktop,
+}
+
 type MenuModel struct {
-	Selected  int
-	Width     int
-	Height    int
-	ThemeName string
+	Selected int
+	Width    int
+	Height   int
 }
 
 func NewMenuModel(height, width int) MenuModel {
@@ -44,12 +52,11 @@ func (m MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "j", "down":
-			m.Selected = (m.Selected + 1) % 6
+			m.Selected = (m.Selected + 1) % len(menuChoices)
 		case "k", "up":
-			m.Selected = (m.Selected - 1 + 6) % 6
+			m.Selected = (m.Selected - 1 + len(menuChoices)) % len(menuChoices)
 		case "enter":
-			choices := []string{ChoiceStartLibrespot, ChoiceTUIOnly, ChoiceCheckStatus, ChoiceCycleTheme, ChoiceHelp, ChoiceStartSpotifyDesktop}
-			return m, func() tea.Msg { return MenuChoiceMsg{Choice: choices[m.Selected]} }
+			return m, func() tea.Msg { return MenuChoiceMsg{Choice: menuChoices[m.Selected]} }
 		case "q":
 			return m, tea.Quit
 		}

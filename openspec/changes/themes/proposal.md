@@ -16,7 +16,7 @@ The user-visible promise: pick a palette from the startup menu, and the entire T
   - `gruvbox-dark` — Gruvbox dark, the other top TUI palette.
 - New file `ui/themes.go` with a registry of palettes indexed by name.
 - New file `ui/config.go` for reading/writing the user's choice to `~/.config/spt-flow/config.json`.
-- New menu entry: **"Theme: <name>"** between "Help / Keybindings" and "Start with Spotify Desktop". Selecting it cycles to the next palette and re-renders the menu.
+- New menu entry: **"Theme: <name>"** at index 3, immediately before "Help / Keybindings". Selecting it cycles to the next palette and re-renders the menu.
 - The active palette name is shown next to the menu option (e.g. "Theme: catppuccin-mocha ›"). Arrow keys still navigate; pressing Enter on the theme option cycles forward.
 - Apply-on-TUI-entry: the menu itself shows the palette live (so users see the new colors as they cycle). When they pick another menu option and enter the TUI, the TUI also uses the chosen palette.
 - Persist the choice to disk on every change. On next start, load it and apply before the first render.
@@ -46,7 +46,7 @@ var Themes = map[string]Theme{
 var ThemeOrder = []string{"default", "catppuccin-mocha", "gruvbox-dark"}
 ```
 
-The active theme lives on the `Model` as a `*Theme` pointer. All `lipgloss` calls in the codebase currently reference `DefaultTheme.X` — those need to be replaced with `m.Theme.X` (or whatever the field is called). Since the existing code is small and the change is mechanical, we can do this in one pass.
+The active theme lives on the `Model` as a `Theme` value. All `lipgloss` calls in the codebase currently reference `DefaultTheme.X` — those need to be replaced with `m.Theme.X` (or whatever the field is called). Since the existing code is small and the change is mechanical, we can do this in one pass.
 
 Config is a single-key JSON file:
 ```json

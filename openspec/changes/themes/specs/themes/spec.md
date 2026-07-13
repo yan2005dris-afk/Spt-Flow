@@ -42,7 +42,7 @@ On startup, the TUI MUST attempt to read the config. If the file is missing, emp
 
 ### REQ-8: Menu Integration
 
-The startup menu MUST show a new option labelled "Theme: <name>" where `<name>` is the currently active palette. The option MUST be inserted between "Help / Keybindings" and "Start with Spotify Desktop" (i.e. as the 4th option, index 3, before the existing 5th).
+The startup menu MUST show a new option labelled "Theme: <name>" where `<name>` is the currently active palette. The option MUST be inserted at index 3, immediately before "Help / Keybindings".
 
 When the user presses Enter on the theme option:
 1. The active palette MUST cycle to the next one in `ThemeOrder` (wrapping back to `default` after the last).
@@ -52,7 +52,7 @@ When the user presses Enter on the theme option:
 
 ### REQ-9: Apply on TUI Entry
 
-When the user picks any non-theme option and enters the TUI proper, the TUI MUST use the currently active palette. The `View()` method MUST read colors from the model's active theme pointer, NOT from `DefaultTheme` directly.
+When the user picks any non-theme option and enters the TUI proper, the TUI MUST use the currently active palette. The `View()` method MUST read colors from the model's active theme value, NOT from `DefaultTheme` directly.
 
 ### REQ-10: All Lipgloss Calls Migrated
 

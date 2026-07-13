@@ -24,7 +24,7 @@
          |
          v
 +--------------------+
-|   ui/shell.go      |   modified: Model.Theme *Theme
+|   ui/shell.go      |   modified: Model.Theme Theme
 |   - View()         |   reads m.Theme.X
 +--------------------+
 ```
@@ -81,7 +81,7 @@ ui/
   config.go       # NEW: load/save config to ~/.config/spt-flow/config.json
   config_test.go  # NEW
   menu.go         # MODIFIED: theme option + cycle handler
-  shell.go        # MODIFIED: Model.Theme *Theme, all DefaultTheme refs → m.Theme
+  shell.go        # MODIFIED: Model.Theme Theme, all DefaultTheme refs → m.Theme
   other files     # MODIFIED: replace DefaultTheme with m.Theme
 ```
 
@@ -205,7 +205,7 @@ func (c *Config) Save() error {
 
 type Model struct {
     // ... existing fields ...
-    Theme *Theme // pointer for live swap; never nil after NewModel
+    Theme Theme // value for live swap; initialized by NewModel
 }
 ```
 
@@ -220,7 +220,7 @@ func NewModel(viewState string) Model {
     theme := Themes[cfg.Theme]
     return Model{
         // ... existing fields ...
-        Theme: &theme,
+        Theme: theme,
     }
 }
 ```

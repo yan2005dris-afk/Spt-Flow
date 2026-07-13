@@ -279,7 +279,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ChoiceCycleTheme:
 			nextName := CycleTheme(m.Theme.Name())
 			m.Theme = Themes[nextName]
-			cfg := &Config{Theme: nextName}
+			cfg, _ := LoadConfig()
+			cfg.Theme = nextName
 			_ = cfg.Save() // log errors inside Save
 			return m, nil
 		}
@@ -304,12 +305,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.ViewState == "menu" {
 			switch msg.String() {
 			case "j", "down":
-				m.SelectedMenuOption = (m.SelectedMenuOption + 1) % 6
+				m.SelectedMenuOption = (m.SelectedMenuOption + 1) % len(menuChoices)
 			case "k", "up":
-				m.SelectedMenuOption = (m.SelectedMenuOption - 1 + 6) % 6
+				m.SelectedMenuOption = (m.SelectedMenuOption - 1 + len(menuChoices)) % len(menuChoices)
 			case "enter":
-				choices := []string{ChoiceStartLibrespot, ChoiceTUIOnly, ChoiceCheckStatus, ChoiceCycleTheme, ChoiceHelp, ChoiceStartSpotifyDesktop}
-				return m, func() tea.Msg { return MenuChoiceMsg{Choice: choices[m.SelectedMenuOption]} }
+				return m, func() tea.Msg { return MenuChoiceMsg{Choice: menuChoices[m.SelectedMenuOption]} }
 			case "q", "ctrl+c":
 				if m.MprisClient != nil {
 					m.MprisClient.Close()

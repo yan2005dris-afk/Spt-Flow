@@ -132,7 +132,7 @@ Spt-Flow supports multiple color palettes. You can preview and switch themes dir
 
 | Name | Description |
 |------|-------------|
-| `default` | Classic terminal colors (ANSI 256-color) |
+| `default` | Classic terminal colors (ANSI 16-color) |
 | `catppuccin-mocha` | Warm mauve/teal palette from the Catppuccin community |
 | `gruvbox-dark` | Retro earthy tones from the Gruvbox project |
 
@@ -147,7 +147,7 @@ The config file is created automatically with mode `0700`. On restart, the saved
 
 ### Config File Location
 
-```
+```text
 ~/.config/spt-flow/config.json   (Linux, XDG_CONFIG_HOME fallback)
 $XDG_CONFIG_HOME/spt-flow/config.json
 ```

@@ -12,6 +12,7 @@ const configFileName = "config.json"
 // Config holds user-visible settings.
 type Config struct {
 	Theme string `json:"theme"`
+	raw   map[string]json.RawMessage
 }
 
 // LoadConfig reads the config file from XDG_CONFIG_HOME/spt-flow/config.json
@@ -19,33 +20,47 @@ type Config struct {
 // unknown-theme files return a default Config{Theme:"default"}; no error is
 // surfaced to the user.
 func LoadConfig() (*Config, error) {
+	fallback := &Config{Theme: "default", raw: make(map[string]json.RawMessage)}
+
 	base, err := os.UserConfigDir()
 	if err != nil {
-		return &Config{Theme: "default"}, nil
+		return fallback, nil
 	}
 	path := filepath.Join(base, "spt-flow", configFileName)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Config{Theme: "default"}, nil
+			return fallback, nil
 		}
 		fmt.Fprintf(os.Stderr, "config: read failed: %v\n", err)
-		return &Config{Theme: "default"}, nil
+		return fallback, nil
 	}
 
-	var c Config
-	if err := json.Unmarshal(data, &c); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
 		fmt.Fprintf(os.Stderr, "config: corrupt file, using default: %v\n", err)
-		return &Config{Theme: "default"}, nil
+		return fallback, nil
+	}
+	if raw == nil {
+		fmt.Fprintln(os.Stderr, "config: corrupt file, using default: expected JSON object")
+		return fallback, nil
 	}
 
-	if _, ok := Themes[c.Theme]; !ok {
-		fmt.Fprintf(os.Stderr, "config: unknown theme %q, using default\n", c.Theme)
-		return &Config{Theme: "default"}, nil
+	theme := "default"
+	if rawTheme, ok := raw["theme"]; ok {
+		if err := json.Unmarshal(rawTheme, &theme); err != nil {
+			fmt.Fprintf(os.Stderr, "config: corrupt theme, using default: %v\n", err)
+			return fallback, nil
+		}
 	}
 
-	return &c, nil
+	if _, ok := Themes[theme]; !ok {
+		fmt.Fprintf(os.Stderr, "config: unknown theme %q, using default\n", theme)
+		theme = "default"
+	}
+
+	return &Config{Theme: theme, raw: raw}, nil
 }
 
 // Save writes Config atomically to XDG_CONFIG_HOME/spt-flow/config.json
@@ -63,6 +78,17 @@ func (c *Config) Save() error {
 	}
 	path := filepath.Join(dir, configFileName)
 
+	raw := make(map[string]json.RawMessage, len(c.raw)+1)
+	for key, value := range c.raw {
+		raw[key] = value
+	}
+	theme, err := json.Marshal(c.Theme)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "config: cannot encode theme: %v\n", err)
+		return err
+	}
+	raw["theme"] = theme
+
 	tmp, err := os.CreateTemp(dir, "config-*.json.tmp")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config: cannot create temp file: %v\n", err)
@@ -73,7 +99,7 @@ func (c *Config) Save() error {
 
 	enc := json.NewEncoder(tmp)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(c); err != nil {
+	if err := enc.Encode(raw); err != nil {
 		tmp.Close()
 		fmt.Fprintf(os.Stderr, "config: write failed: %v\n", err)
 		return err
@@ -91,5 +117,6 @@ func (c *Config) Save() error {
 		fmt.Fprintf(os.Stderr, "config: rename failed: %v\n", err)
 		return err
 	}
+	c.raw = raw
 	return nil
 }
