@@ -396,66 +396,24 @@ func (m Model) View() string {
 		mainHeight = 0
 	}
 
-	// Responsive layout:
-	// - Wide (>=80): navbar | lyrics | visualizer bars (stacked)
-	// - Narrow: lyrics only
+	// Lyrics fill the main area, visualizer bars at bottom (only when playing, wide screens).
 	var mainArea string
-	if m.Width >= 80 {
-		navbarRow := 1
+	if m.Width >= 80 && m.PlaybackStatus == "Playing" {
 		visRow := 3
-		lyricsHeight := mainHeight - navbarRow - visRow
+		lyricsHeight := mainHeight - visRow
 		if lyricsHeight < 3 {
 			lyricsHeight = mainHeight
-			navbarRow = 0
 			visRow = 0
 		}
-
-		navbar := ""
-		if navbarRow > 0 {
-			navbar = lipgloss.NewStyle().
-				Width(m.Width).
-				Foreground(lipgloss.Color("15")).
-				Bold(true).
-				Align(lipgloss.Center).
-				Render(m.Track.Title + " - " + m.Track.Artist)
-		}
-
-		lyrics := renderLyrics(m, m.Width, lyricsHeight)
-
-		visBars := ""
+		lyricsContent := renderLyrics(m, m.Width, lyricsHeight)
 		if visRow > 0 {
-			visBars = renderVisualizer(m, m.Width, visRow)
+			visBars := renderVisualizer(m, m.Width, visRow)
+			mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visBars)
+		} else {
+			mainArea = lyricsContent
 		}
-
-		// Stack: navbar + lyrics + visualizer bars
-		parts := []string{}
-		if navbar != "" {
-			parts = append(parts, navbar)
-		}
-		if lyrics != "" {
-			parts = append(parts, lyrics)
-		}
-		if visBars != "" {
-			// Visualizer bars get a border to separate from lyrics
-			visStyled := lipgloss.NewStyle().
-				Border(lipgloss.NormalBorder()).
-				BorderForeground(lipgloss.Color("8")).
-				Width(m.Width).
-				Render(visBars)
-			parts = append(parts, visStyled)
-		}
-
-		mainArea = lipgloss.JoinVertical(lipgloss.Left, parts...)
 	} else {
-		// Narrow: lyrics only, with navbar as first line
-		navbar := lipgloss.NewStyle().
-			Width(m.Width).
-			Foreground(lipgloss.Color("15")).
-			Bold(true).
-			Align(lipgloss.Center).
-			Render(m.Track.Title + " - " + m.Track.Artist)
-		lyrics := renderLyrics(m, m.Width, mainHeight-1)
-		mainArea = lipgloss.JoinVertical(lipgloss.Left, navbar, lyrics)
+		mainArea = renderLyrics(m, m.Width, mainHeight)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, mainArea, footer)
