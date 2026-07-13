@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -397,40 +396,16 @@ func (m Model) View() string {
 		mainHeight = 0
 	}
 
-	// Grid layout (wide screens): lyrics | album art + visualizer below.
-	// Layout:
-	//   ┌────────────────────┬──────────┐
-	//   │      lyrics        │  album   │
-	//   │                    │   art    │
-	//   ├────────────────────┴──────────┤
-	//   │        visualizer bars        │
-	//   └───────────────────────────────┘
+	// Side-by-side layout: lyrics left, visualizer right.
 	var mainArea string
 	if m.Width >= 80 {
-		visRowHeight := 3 // rows for visualizer at bottom
-		contentHeight := mainHeight - visRowHeight
-		if contentHeight < 5 {
-			contentHeight = mainHeight
-			visRowHeight = 0
-		}
-
-		albumWidth := 28
-		if albumWidth > m.Width-40 {
-			albumWidth = m.Width - 40
-		}
-		lyricsWidth := m.Width - albumWidth - 1
-
-		lyricsPanel := renderLyrics(m, lyricsWidth, contentHeight)
-		albumPanel := renderAlbumArt(m, albumWidth, contentHeight)
-
-		contentArea := lipgloss.JoinHorizontal(lipgloss.Top, lyricsPanel, albumPanel)
-
-		if visRowHeight > 0 {
-			visBar := renderVisualizer(m, m.Width, visRowHeight)
-			mainArea = lipgloss.JoinVertical(lipgloss.Left, contentArea, visBar)
-		} else {
-			mainArea = contentArea
-		}
+		lyricsWidth := m.Width - 32
+		visWidth := 30
+		mainArea = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			renderLyrics(m, lyricsWidth, mainHeight),
+			renderVisualizer(m, visWidth, mainHeight),
+		)
 	} else {
 		mainArea = renderLyrics(m, m.Width, mainHeight)
 	}
@@ -692,107 +667,6 @@ func renderLyrics(m Model, width, height int) string {
 		}
 	}
 	return strings.Join(renderedLines, "\n")
-}
-
-// renderAlbumArt renders a pixelated "album art" block using Unicode
-// block characters (█ ▓ ▒ ░) generated from the album/artist name hash.
-// The pattern is deterministic per album, creating a consistent "art"
-// representation without requiring actual image fetching.
-func renderAlbumArt(m Model, width, height int) string {
-	if m.Track.Album == "" && m.Track.Artist == "" {
-		return emptyAlbumArt(width, height)
-	}
-
-	// Seed from album + artist for more uniqueness.
-	h := fnv.New64a()
-	h.Write([]byte(m.Track.Album + "|" + m.Track.Artist))
-	seed := h.Sum64()
-
-	// Pick two colors from the seed (ANSI color indices 1-15).
-	c1 := lipgloss.ANSIColor(1 + int(seed%14))
-	c2 := lipgloss.ANSIColor(1 + int(seed>>4)%14)
-
-	// Unicode block characters from dark to light.
-	blocks := []rune{' ', '░', '▒', '▓', '█'}
-
-	// Render grid of block characters with alternating colors.
-	var rows []string
-	for row := 0; row < height; row++ {
-		var sb strings.Builder
-		for col := 0; col < width; col++ {
-			// Mix colors in checkerboard-like pattern.
-			useC1 := (row+col)%2 == 0
-			color := c1
-			if !useC1 {
-				color = c2
-			}
-
-			// Vary density based on position and seed.
-			idx := int(seed>>(row+col*3)%8) % len(blocks)
-			ch := blocks[idx]
-
-			style := lipgloss.NewStyle().Foreground(color)
-			sb.WriteString(style.Render(string(ch)))
-		}
-		rows = append(rows, sb.String())
-	}
-
-	// Center the album name and artist at the bottom of the art block.
-	albumStyle := lipgloss.NewStyle().
-		Width(width).
-		Foreground(lipgloss.Color("15")).
-		Bold(true)
-	artistStyle := lipgloss.NewStyle().
-		Width(width).
-		Foreground(lipgloss.Color("7"))
-
-	// Truncate if needed.
-	albumName := m.Track.Album
-	artistName := m.Track.Artist
-	if len(albumName) > width {
-		albumName = albumName[:width]
-	}
-	if len(artistName) > width {
-		artistName = artistName[:width]
-	}
-
-	// Find last non-empty row to place text at bottom.
-	startRow := height - 2
-	if startRow < 0 {
-		startRow = 0
-	}
-
-	// Rebuild with text overlaid in last rows.
-	var resultRows []string
-	for i := 0; i < height; i++ {
-		if i == startRow && albumName != "" {
-			resultRows = append(resultRows, lipgloss.Place(width, 1, lipgloss.Center, lipgloss.Bottom, albumStyle.Render(albumName)))
-		} else if i == startRow+1 && artistName != "" {
-			resultRows = append(resultRows, lipgloss.Place(width, 1, lipgloss.Center, lipgloss.Bottom, artistStyle.Render(artistName)))
-		} else {
-			resultRows = append(resultRows, rows[i])
-		}
-	}
-
-	return lipgloss.JoinVertical(lipgloss.Left, resultRows...)
-}
-
-// emptyAlbumArt renders a placeholder when no track info is available.
-func emptyAlbumArt(width, height int) string {
-	var rows []string
-	style := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	for i := 0; i < height; i++ {
-		row := ""
-		for j := 0; j < width; j++ {
-			if (i+j)%4 == 0 {
-				row += style.Render("▒")
-			} else {
-				row += style.Render(" ")
-			}
-		}
-		rows = append(rows, row)
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
 func renderVisualizer(m Model, width, height int) string {
