@@ -84,6 +84,12 @@ Spt-Flow/
 ├── ui/
 │   ├── shell.go      # TUI shell and layout
 │   ├── shell_test.go
+│   ├── menu.go       # Startup menu model and rendering
+│   ├── theme.go      # Theme struct + DefaultTheme palette
+│   ├── themes.go     # Palette registry (Themes, ThemeOrder, CatppuccinMocha, GruvboxDark)
+│   ├── themes_test.go
+│   ├── config.go     # Config load/save (XDG_CONFIG_HOME/spt-flow/config.json)
+│   ├── config_test.go
 │   ├── visualizer.go # Audio visualizer component
 │   └── visualizer_test.go
 ├── mpris/
@@ -116,6 +122,39 @@ To clear the cache manually:
 
 ```bash
 rm ~/.cache/spt-flow/lyrics.json
+```
+
+## Themes
+
+Spt-Flow supports multiple color palettes. You can preview and switch themes directly from the startup menu.
+
+### Available Palettes
+
+| Name | Description |
+|------|-------------|
+| `default` | Classic terminal colors (ANSI 256-color) |
+| `catppuccin-mocha` | Warm mauve/teal palette from the Catppuccin community |
+| `gruvbox-dark` | Retro earthy tones from the Gruvbox project |
+
+### Switching Themes
+
+1. Run `tui-spotify`
+2. From the startup menu, navigate to **Theme: \<name\>** and press **Enter**
+3. The menu re-renders with the new palette immediately
+4. Your choice is persisted to `~/.config/spt-flow/config.json`
+
+The config file is created automatically with mode `0700`. On restart, the saved theme is restored automatically. If the config file is missing, corrupt, or contains an unknown theme name, the TUI falls back to `default` without any user-visible error.
+
+### Config File Location
+
+```
+~/.config/spt-flow/config.json   (Linux, XDG_CONFIG_HOME fallback)
+$XDG_CONFIG_HOME/spt-flow/config.json
+```
+
+The file format:
+```json
+{ "theme": "catppuccin-mocha" }
 ```
 
 ## License

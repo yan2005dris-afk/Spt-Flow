@@ -60,10 +60,11 @@ type Model struct {
 	SignalChan         chan *dbus.Signal
 	LaunchedSpotify    bool   // set true after first successful LaunchSpotify
 	ViewState          string // "menu" or "tui"
-	SelectedMenuOption int    // 0-3 for menu navigation
+	SelectedMenuOption int    // 0-5 for menu navigation
 	ShowingHelp        bool   // for ? overlay
 	HelpTimer          bool   // if true, ? overlay auto-dismisses
 	StatusMessage      string // for check-status option
+	Theme              Theme  // active palette
 }
 
 func mustHome() string {
@@ -86,12 +87,19 @@ func NewModel(viewState string) Model {
 		visualizer.sampleBuf = make([]float32, DFTInputSize)
 	}
 
+	cfg, _ := LoadConfig()
+	theme := Themes[cfg.Theme]
+	if theme == (Theme{}) {
+		theme = Themes["default"]
+	}
+
 	return Model{
 		LastUpdated:        time.Now(),
 		Visualizer:         visualizer,
 		ViewState:          viewState,
 		SelectedMenuOption: 0,
 		ShowingHelp:        false,
+		Theme:              theme,
 	}
 }
 
@@ -266,6 +274,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ChoiceHelp:
 			m.ShowingHelp = true
 			return m, menuTickCmd(5 * time.Second)
+
+		case ChoiceCycleTheme:
+			nextName := CycleTheme(m.Theme.Name())
+			m.Theme = Themes[nextName]
+			cfg := &Config{Theme: nextName}
+			_ = cfg.Save() // log errors inside Save
+			return m, nil
 		}
 		return m, nil
 
@@ -288,11 +303,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.ViewState == "menu" {
 			switch msg.String() {
 			case "j", "down":
-				m.SelectedMenuOption = (m.SelectedMenuOption + 1) % 5
+				m.SelectedMenuOption = (m.SelectedMenuOption + 1) % 6
 			case "k", "up":
-				m.SelectedMenuOption = (m.SelectedMenuOption - 1 + 5) % 5
+				m.SelectedMenuOption = (m.SelectedMenuOption - 1 + 6) % 6
 			case "enter":
-				choices := []string{ChoiceStartLibrespot, ChoiceTUIOnly, ChoiceCheckStatus, ChoiceHelp, ChoiceStartSpotifyDesktop}
+				choices := []string{ChoiceStartLibrespot, ChoiceTUIOnly, ChoiceCheckStatus, ChoiceCycleTheme, ChoiceHelp, ChoiceStartSpotifyDesktop}
 				return m, func() tea.Msg { return MenuChoiceMsg{Choice: choices[m.SelectedMenuOption]} }
 			case "q", "ctrl+c":
 				if m.MprisClient != nil {
@@ -568,7 +583,7 @@ func (m *Model) fetchLyricsCmd(track mpris.Track) tea.Cmd {
 func renderHeader(m Model) string {
 	style := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(DefaultTheme.Header).
+		Foreground(m.Theme.Header).
 		Padding(0, 1)
 
 	trackInfo := fmt.Sprintf("%s - %s", m.Track.Title, m.Track.Artist)
@@ -607,9 +622,9 @@ func renderFooter(m Model) string {
 	footerStyle := lipgloss.NewStyle().
 		Padding(0, 1)
 	if !m.SpotifyRunning {
-		footerStyle = footerStyle.Foreground(DefaultTheme.Waiting)
+		footerStyle = footerStyle.Foreground(m.Theme.Waiting)
 	} else {
-		footerStyle = footerStyle.Foreground(DefaultTheme.Footer)
+		footerStyle = footerStyle.Foreground(m.Theme.Footer)
 	}
 	return footerStyle.Render(info)
 }
@@ -643,14 +658,14 @@ func renderLyrics(m Model, width, height int) string {
 			return lipgloss.NewStyle().
 				Width(width).
 				Align(lipgloss.Center).
-				Foreground(DefaultTheme.Waiting).
+				Foreground(m.Theme.Waiting).
 				Render(m.LoadingMessage)
 		}
 		if m.ErrorMessage != "" {
 			return lipgloss.NewStyle().
 				Width(width).
 				Align(lipgloss.Center).
-				Foreground(DefaultTheme.Error).
+				Foreground(m.Theme.Error).
 				Render("Error: " + m.ErrorMessage)
 		}
 		return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render("No lyrics available")
@@ -676,9 +691,9 @@ func renderLyrics(m Model, width, height int) string {
 
 				style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center)
 				if lineIdx == active {
-					style = style.Foreground(DefaultTheme.LyricActive).Bold(true)
+					style = style.Foreground(m.Theme.LyricActive).Bold(true)
 				} else {
-					style = style.Foreground(DefaultTheme.LyricInactive)
+					style = style.Foreground(m.Theme.LyricInactive)
 				}
 				renderedLines = append(renderedLines, style.Render(content))
 			} else {
@@ -694,7 +709,7 @@ func renderLyrics(m Model, width, height int) string {
 				if len(content) > width {
 					content = content[:width]
 				}
-				style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Foreground(DefaultTheme.LyricPlain)
+				style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Foreground(m.Theme.LyricPlain)
 				renderedLines = append(renderedLines, style.Render(content))
 			} else {
 				renderedLines = append(renderedLines, "")

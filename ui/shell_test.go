@@ -414,18 +414,25 @@ func TestMenu_Navigate(t *testing.T) {
 		t.Errorf("Expected SelectedMenuOption to be 4 after fourth j key, got %d", resM.SelectedMenuOption)
 	}
 
+	// Press 'j' again to go to 5
+	newM, _ = resM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	resM = newM.(Model)
+	if resM.SelectedMenuOption != 5 {
+		t.Errorf("Expected SelectedMenuOption to be 5 after fifth j key, got %d", resM.SelectedMenuOption)
+	}
+
 	// Press 'j' again - should wrap to 0
 	newM, _ = resM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	resM = newM.(Model)
 	if resM.SelectedMenuOption != 0 {
-		t.Errorf("Expected SelectedMenuOption to wrap to 0 after j at index 4, got %d", resM.SelectedMenuOption)
+		t.Errorf("Expected SelectedMenuOption to wrap to 0 after j at index 5, got %d", resM.SelectedMenuOption)
 	}
 
 	// Press 'k' to go back up
 	newM, _ = resM.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
 	resM = newM.(Model)
-	if resM.SelectedMenuOption != 4 {
-		t.Errorf("Expected SelectedMenuOption to be 4 after k key, got %d", resM.SelectedMenuOption)
+	if resM.SelectedMenuOption != 5 {
+		t.Errorf("Expected SelectedMenuOption to be 5 after k key, got %d", resM.SelectedMenuOption)
 	}
 }
 
