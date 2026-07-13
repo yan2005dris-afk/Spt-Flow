@@ -121,6 +121,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.Visualizer.Update(false)
 		}
+		// DEBUG to stderr so it doesn't corrupt TUI output
+		fmt.Fprintf(os.Stderr, "DEBUG status=%q running=%v\n", m.PlaybackStatus, m.SpotifyRunning)
 		m.LastUpdated = time.Now()
 		return m, m.tickCmd()
 
