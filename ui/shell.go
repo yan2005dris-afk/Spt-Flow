@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"tui-spotify/library"
 	"tui-spotify/lyrics"
 	"tui-spotify/lyrics/cache"
 	"tui-spotify/mpris"
@@ -22,11 +23,16 @@ import (
 )
 
 type (
-	TickMsg          struct{}
-	PollTickMsg      struct{}
-	SpotifySignalMsg struct{}
-	MenuChoiceMsg    struct{ Choice string }
-	MenuTimerMsg     struct{}
+	TickMsg            struct{}
+	PollTickMsg        struct{}
+	SpotifySignalMsg   struct{}
+	MenuChoiceMsg      struct{ Choice string }
+	MenuTimerMsg       struct{}
+	LibraryChangedMsg  struct{}
+	AddPlaylistMsg    struct{ URL string }
+	DeletePlaylistMsg  struct{ ID string }
+	ToggleFavoriteMsg  struct{ TrackID string }
+	PlayTrackMsg       struct{ TrackID string }
 )
 
 type SpotifyStateMsg struct {
@@ -44,28 +50,37 @@ type LyricsMsg struct {
 }
 
 type Model struct {
-	MprisClient        *mpris.Client
-	LyricsClient       *lyrics.Client
-	LyricsCache        *cache.Store
-	Track              mpris.Track
-	Lyrics             lyrics.Lyrics
-	PlaybackStatus     string
-	Position           time.Duration
-	LastUpdated        time.Time
-	Width, Height      int
-	ScrollOffset       int
-	SpotifyRunning     bool
-	LoadingMessage     string // e.g. "Cargando letras..." — transient loading state
-	ErrorMessage       string // actual errors
-	Visualizer         *Visualizer
-	SignalChan         chan *dbus.Signal
-	LaunchedSpotify    bool   // set true after first successful LaunchSpotify
-	ViewState          string // "menu" or "tui"
-	SelectedMenuOption int    // 0-5 for menu navigation
-	ShowingHelp        bool   // for ? overlay
-	HelpTimer          bool   // if true, ? overlay auto-dismisses
-	StatusMessage      string // for check-status option
-	Theme              Theme  // active palette
+	MprisClient         *mpris.Client
+	LyricsClient        *lyrics.Client
+	LyricsCache         *cache.Store
+	Track               mpris.Track
+	Lyrics              lyrics.Lyrics
+	PlaybackStatus      string
+	Position            time.Duration
+	LastUpdated         time.Time
+	Width, Height       int
+	ScrollOffset        int
+	SpotifyRunning      bool
+	LoadingMessage      string // e.g. "Cargando letras..." — transient loading state
+	ErrorMessage        string // actual errors
+	Visualizer          *Visualizer
+	SignalChan          chan *dbus.Signal
+	LaunchedSpotify     bool   // set true after first successful LaunchSpotify
+	ViewState           string // "menu" or "tui"
+	SelectedMenuOption  int    // 0-5 for menu navigation
+	ShowingHelp         bool   // for ? overlay
+	HelpTimer           bool   // if true, ? overlay auto-dismisses
+	StatusMessage       string // for check-status option
+	Theme               Theme  // active palette
+	// Library fields
+	Library             *library.Store
+	FilterView          string   // "playlists", "favorites", "recent", or ""
+	SelectedPlaylistID  string   // currently selected playlist ID
+	SelectedTrackIndex  int      // cursor position in track list
+	SidebarWidth        int      // width of left pane in two-column layout
+	// URL input modal
+	URLInputActive      bool     // if true, capture URL input
+	URLInputValue       string   // accumulated URL string
 }
 
 func mustHome() string {
@@ -105,6 +120,9 @@ func NewModel(viewState string) Model {
 }
 
 func (m Model) Init() tea.Cmd {
+	// Load library on startup
+	m.Library, _ = library.Load()
+
 	if m.ViewState == "menu" {
 		return nil
 	}
@@ -188,6 +206,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.LoadingMessage = "Cargando letras..."
 			m.ErrorMessage = ""
 			cmds = append(cmds, m.fetchLyricsCmd(msg.Track))
+			// Add to recent tracks (skip if Library not yet loaded or ID empty)
+			if m.Library != nil && msg.Track.ID != "" {
+				m.Library.AddRecent(library.Track{
+					ID:       msg.Track.ID,
+					Title:    msg.Track.Title,
+					Artist:   msg.Track.Artist,
+					Album:    msg.Track.Album,
+					Duration: msg.Track.Duration,
+				})
+			}
 		}
 
 		return m, tea.Batch(cmds...)
@@ -294,6 +322,73 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ViewState = "tui"
 		return m, nil
 
+	case AddPlaylistMsg:
+		if m.Library != nil {
+			_, err := m.Library.AddPlaylist(msg.URL)
+			if err != nil {
+				m.ErrorMessage = "Invalid Spotify URL"
+			} else {
+				m.ErrorMessage = ""
+			}
+		}
+		m.URLInputActive = false
+		m.URLInputValue = ""
+		return m, nil
+
+	case DeletePlaylistMsg:
+		if m.Library != nil {
+			m.Library.RemovePlaylist(msg.ID)
+		}
+		return m, nil
+
+	case ToggleFavoriteMsg:
+		if m.Library != nil && msg.TrackID != "" {
+			if m.Library.IsFavorite(msg.TrackID) {
+				m.Library.RemoveFavorite(msg.TrackID)
+			} else {
+				// Find track in current view and add to favorites
+				var track library.Track
+				switch m.FilterView {
+				case "playlists":
+					playlists := m.Library.GetPlaylists()
+					for _, p := range playlists {
+						if p.ID == m.SelectedPlaylistID {
+							// Build track from playlist context (TrackIDs only, no metadata)
+							// For favorites view, we'd need full track info
+						}
+					}
+				case "favorites":
+					favorites := m.Library.GetFavorites()
+					if m.SelectedTrackIndex >= 0 && m.SelectedTrackIndex < len(favorites) {
+						track = favorites[m.SelectedTrackIndex]
+					}
+				case "recent":
+					recent := m.Library.GetRecent()
+					if m.SelectedTrackIndex >= 0 && m.SelectedTrackIndex < len(recent) {
+						track = recent[m.SelectedTrackIndex]
+					}
+				}
+				if track.ID != "" {
+					m.Library.AddFavorite(track)
+				}
+			}
+		}
+		return m, nil
+
+	case PlayTrackMsg:
+		if msg.TrackID != "" {
+			if err := library.OpenTrack(msg.TrackID); err != nil {
+				m.ErrorMessage = "Cannot open track: install xdg-open"
+			} else {
+				m.ErrorMessage = ""
+			}
+		}
+		return m, nil
+
+	case LibraryChangedMsg:
+		// Library was modified externally; state already updated via pointer
+		return m, nil
+
 	case tea.KeyMsg:
 		// Handle help overlay dismissal
 		if m.ShowingHelp {
@@ -328,8 +423,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, menuTickCmd(5 * time.Second)
 		}
 
-		// ESC key returns to menu from TUI
+		// ESC key returns to menu from TUI, or closes sidebar/modal
 		if msg.String() == "esc" {
+			if m.URLInputActive {
+				m.URLInputActive = false
+				m.URLInputValue = ""
+				return m, nil
+			}
+			if m.FilterView != "" {
+				m.FilterView = ""
+				return m, nil
+			}
 			m.ViewState = "menu"
 			m.SelectedMenuOption = 0
 			return m, nil
@@ -384,12 +488,106 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "k", "up":
-			if !m.Lyrics.Synced {
+			if m.FilterView != "" {
+				m.cursorUp()
+			} else if !m.Lyrics.Synced {
 				m.scrollUp()
 			}
 		case "j", "down":
-			if !m.Lyrics.Synced {
+			if m.FilterView != "" {
+				m.cursorDown()
+			} else if !m.Lyrics.Synced {
 				m.scrollDown()
+			}
+		case "1":
+			m.FilterView = "playlists"
+			m.SelectedTrackIndex = 0
+			m.SidebarWidth = m.Width * 40 / 100
+		case "2":
+			m.FilterView = "favorites"
+			m.SelectedTrackIndex = 0
+			m.SidebarWidth = m.Width * 40 / 100
+		case "3":
+			m.FilterView = "recent"
+			m.SelectedTrackIndex = 0
+			m.SidebarWidth = m.Width * 40 / 100
+		case "a":
+			m.URLInputActive = true
+			m.URLInputValue = ""
+		case "d":
+			if m.FilterView == "playlists" && m.SelectedPlaylistID != "" {
+				return m, func() tea.Msg { return DeletePlaylistMsg{ID: m.SelectedPlaylistID} }
+			}
+			if m.FilterView == "favorites" || m.FilterView == "recent" {
+				// Delete by track index
+				var trackID string
+				if m.FilterView == "favorites" && m.Library != nil {
+					favs := m.Library.GetFavorites()
+					if m.SelectedTrackIndex >= 0 && m.SelectedTrackIndex < len(favs) {
+						trackID = favs[m.SelectedTrackIndex].ID
+						m.Library.RemoveFavorite(trackID)
+					}
+				} else if m.FilterView == "recent" && m.Library != nil {
+					rec := m.Library.GetRecent()
+					if m.SelectedTrackIndex >= 0 && m.SelectedTrackIndex < len(rec) {
+						trackID = rec[m.SelectedTrackIndex].ID
+					}
+				}
+			}
+		case "f":
+			if m.FilterView != "" && m.Library != nil {
+				var trackID string
+				if m.FilterView == "favorites" && m.Library != nil {
+					favs := m.Library.GetFavorites()
+					if m.SelectedTrackIndex >= 0 && m.SelectedTrackIndex < len(favs) {
+						trackID = favs[m.SelectedTrackIndex].ID
+					}
+				} else if m.FilterView == "recent" && m.Library != nil {
+					rec := m.Library.GetRecent()
+					if m.SelectedTrackIndex >= 0 && m.SelectedTrackIndex < len(rec) {
+						trackID = rec[m.SelectedTrackIndex].ID
+					}
+				} else if m.FilterView == "playlists" && m.SelectedPlaylistID != "" {
+					// For playlists, get track ID from selected index
+					pl, ok := m.Library.GetPlaylist(m.SelectedPlaylistID)
+					if ok && m.SelectedTrackIndex >= 0 && m.SelectedTrackIndex < len(pl.TrackIDs) {
+						trackID = pl.TrackIDs[m.SelectedTrackIndex]
+					}
+				}
+				if trackID != "" {
+					return m, func() tea.Msg { return ToggleFavoriteMsg{TrackID: trackID} }
+				}
+			}
+		case "enter":
+			if m.URLInputActive {
+				// Submit URL
+				if m.URLInputValue != "" {
+					return m, func() tea.Msg { return AddPlaylistMsg{URL: m.URLInputValue} }
+				}
+				m.URLInputActive = false
+				m.URLInputValue = ""
+			} else if m.FilterView != "" {
+				// Play selected track
+				var trackID string
+				if m.FilterView == "playlists" && m.SelectedPlaylistID != "" {
+					pl, ok := m.Library.GetPlaylist(m.SelectedPlaylistID)
+					if ok && m.SelectedTrackIndex >= 0 && m.SelectedTrackIndex < len(pl.TrackIDs) {
+						trackID = pl.TrackIDs[m.SelectedTrackIndex]
+					}
+				} else if m.FilterView == "favorites" && m.Library != nil {
+					favs := m.Library.GetFavorites()
+					if m.SelectedTrackIndex >= 0 && m.SelectedTrackIndex < len(favs) {
+						trackID = favs[m.SelectedTrackIndex].ID
+					}
+				} else if m.FilterView == "recent" && m.Library != nil {
+					rec := m.Library.GetRecent()
+					if m.SelectedTrackIndex >= 0 && m.SelectedTrackIndex < len(rec) {
+						trackID = rec[m.SelectedTrackIndex].ID
+					}
+				}
+				if trackID != "" {
+					return m, func() tea.Msg { return PlayTrackMsg{TrackID: trackID} }
+				}
 			}
 		}
 	}
@@ -413,6 +611,11 @@ func (m Model) View() string {
 			Render("Waiting for Spotify...")
 	}
 
+	// URL input modal overlay
+	if m.URLInputActive {
+		return m.renderURLInputModal()
+	}
+
 	header := renderHeader(m)
 	footer := renderFooter(m)
 
@@ -423,35 +626,44 @@ func (m Model) View() string {
 		mainHeight = 0
 	}
 
-	// Lyrics fill the main area minus a fixed visualizer strip below.
-	// The visualizer area is ALWAYS reserved (when wide enough) so lyrics
-	// don't shift when the visualizer appears/disappears (e.g. on track
-	// change when playback status flips).
+	// Two-column layout when FilterView is active and width >= 80
 	var mainArea string
-	visRow := 0
-	if m.Width >= 80 {
-		visRow = 3
-	}
-
-	lyricsHeight := mainHeight - visRow
-	if lyricsHeight < 3 {
-		lyricsHeight = mainHeight
-		visRow = 0
-	}
-
-	lyricsContent := renderLyrics(m, m.Width, lyricsHeight)
-	if visRow > 0 {
-		var visContent string
-		if m.PlaybackStatus == "Playing" {
-			visContent = renderVisualizer(m, m.Width, visRow)
-		} else {
-			// Reserve the visualizer area with blank lines so the layout
-			// stays put when playback toggles.
-			visContent = strings.Repeat("\n", visRow-1)
-		}
-		mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visContent)
+	if m.Width >= 80 && m.FilterView != "" {
+		m.SidebarWidth = m.Width * 40 / 100
+		sidebarContent := m.renderSidebar(m.SidebarWidth, mainHeight)
+		trackListWidth := m.Width - m.SidebarWidth - 1
+		trackListContent := m.renderTrackList(trackListWidth, mainHeight)
+		mainArea = lipgloss.JoinHorizontal(lipgloss.Top, sidebarContent, trackListContent)
 	} else {
-		mainArea = lyricsContent
+		// Lyrics fill the main area minus a fixed visualizer strip below.
+		// The visualizer area is ALWAYS reserved (when wide enough) so lyrics
+		// don't shift when the visualizer appears/disappears (e.g. on track
+		// change when playback status flips).
+		visRow := 0
+		if m.Width >= 80 {
+			visRow = 3
+		}
+
+		lyricsHeight := mainHeight - visRow
+		if lyricsHeight < 3 {
+			lyricsHeight = mainHeight
+			visRow = 0
+		}
+
+		lyricsContent := renderLyrics(m, m.Width, lyricsHeight)
+		if visRow > 0 {
+			var visContent string
+			if m.PlaybackStatus == "Playing" {
+				visContent = renderVisualizer(m, m.Width, visRow)
+			} else {
+				// Reserve the visualizer area with blank lines so the layout
+				// stays put when playback toggles.
+				visContent = strings.Repeat("\n", visRow-1)
+			}
+			mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visContent)
+		} else {
+			mainArea = lyricsContent
+		}
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, mainArea, footer)
@@ -485,6 +697,37 @@ func (m *Model) scrollDown() {
 	}
 	if m.ScrollOffset < maxScroll {
 		m.ScrollOffset++
+	}
+}
+
+func (m *Model) cursorUp() {
+	if m.SelectedTrackIndex > 0 {
+		m.SelectedTrackIndex--
+	}
+}
+
+func (m *Model) cursorDown() {
+	if m.Library == nil {
+		return
+	}
+	var max int
+	switch m.FilterView {
+	case "playlists":
+		if m.SelectedPlaylistID != "" {
+			pl, ok := m.Library.GetPlaylist(m.SelectedPlaylistID)
+			if ok {
+				max = len(pl.TrackIDs)
+			}
+		} else {
+			max = len(m.Library.GetPlaylists())
+		}
+	case "favorites":
+		max = len(m.Library.GetFavorites())
+	case "recent":
+		max = len(m.Library.GetRecent())
+	}
+	if m.SelectedTrackIndex < max-1 {
+		m.SelectedTrackIndex++
 	}
 }
 
@@ -766,6 +1009,238 @@ func renderVisualizer(m Model, width, height int) string {
 		}
 	}
 	return strings.Join(styledLines, "\n")
+}
+
+// renderURLInputModal renders the URL paste modal overlay.
+func (m Model) renderURLInputModal() string {
+	width := 60
+	height := 5
+	x := (m.Width - width) / 2
+	if x < 0 {
+		x = 0
+	}
+	y := (m.Height - height) / 2
+	if y < 0 {
+		y = 0
+	}
+
+	borderStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(m.Theme.MenuBorder).
+		Width(width).
+		Height(height)
+
+	content := fmt.Sprintf("Paste Spotify URL and press Enter:\n\n  %s", m.URLInputValue)
+	if m.URLInputValue == "" {
+		content = "Paste Spotify URL and press Enter:\n\n  (waiting for input...)"
+	}
+
+	modal := lipgloss.Place(m.Width, m.Height,
+		lipgloss.Center, lipgloss.Center,
+		borderStyle.Render(content),
+	)
+
+	// Also show the URL value at the bottom of the screen for feedback
+	return lipgloss.JoinVertical(lipgloss.Left,
+		modal,
+		lipgloss.NewStyle().
+			Foreground(m.Theme.Waiting).
+			Render("URL: "+m.URLInputValue),
+	)
+}
+
+// renderSidebar renders the left pane with filter tabs and list.
+func (m Model) renderSidebar(width, height int) string {
+	if width < 5 {
+		width = 5
+	}
+
+	tabStyle := lipgloss.NewStyle().
+		Width(width).
+		Foreground(m.Theme.MenuDim)
+
+	activeStyle := lipgloss.NewStyle().
+		Width(width).
+		Foreground(m.Theme.Header).
+		Bold(true)
+
+	var tabsLine string
+	if m.FilterView == "playlists" {
+		tabsLine = activeStyle.Render("[1]Playlists") + tabStyle.Render(" [2]Favorites [3]Recent")
+	} else if m.FilterView == "favorites" {
+		tabsLine = tabStyle.Render("[1]Playlists ") + activeStyle.Render("[2]Favorites") + tabStyle.Render(" [3]Recent")
+	} else if m.FilterView == "recent" {
+		tabsLine = tabStyle.Render("[1]Playlists [2]Favorites ") + activeStyle.Render("[3]Recent")
+	}
+
+	// Build list content
+	var listContent []string
+	listHeight := height - 1 // minus 1 for tabs row
+
+	switch m.FilterView {
+	case "playlists":
+		if m.Library != nil {
+			playlists := m.Library.GetPlaylists()
+			for i, pl := range playlists {
+				prefix := "  "
+				if i == m.SelectedTrackIndex {
+					prefix = "> "
+				}
+				name := pl.Name
+				if name == "" {
+					name = "Playlist"
+				}
+				listContent = append(listContent, prefix+name)
+			}
+		}
+	case "favorites":
+		if m.Library != nil {
+			favorites := m.Library.GetFavorites()
+			for i, tr := range favorites {
+				prefix := "  "
+				if i == m.SelectedTrackIndex {
+					prefix = "> "
+				}
+				listContent = append(listContent, prefix+tr.Title+" - "+tr.Artist)
+			}
+		}
+	case "recent":
+		if m.Library != nil {
+			recent := m.Library.GetRecent()
+			for i, tr := range recent {
+				prefix := "  "
+				marker := " "
+				if tr.ID == m.Track.ID {
+					marker = "▶"
+				}
+				if i == m.SelectedTrackIndex {
+					prefix = "> "
+				}
+				listContent = append(listContent, prefix+marker+" "+tr.Title+" - "+tr.Artist)
+			}
+		}
+	}
+
+	// Pad list to fill height
+	for len(listContent) < listHeight {
+		listContent = append(listContent, "")
+	}
+	if len(listContent) > listHeight {
+		listContent = listContent[:listHeight]
+	}
+
+	listStyle := lipgloss.NewStyle().
+		Width(width).
+		Height(listHeight)
+
+	listRendered := listStyle.Render(strings.Join(listContent, "\n"))
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.NewStyle().Width(width).Render(tabsLine),
+		listRendered,
+	)
+}
+
+// renderTrackList renders the right pane with track details.
+func (m Model) renderTrackList(width, height int) string {
+	if width < 5 {
+		width = 5
+	}
+
+	headerText := fmt.Sprintf("<%s>", m.FilterView)
+	count := 0
+	if m.Library != nil {
+		switch m.FilterView {
+		case "playlists":
+			if m.SelectedPlaylistID != "" {
+				if pl, ok := m.Library.GetPlaylist(m.SelectedPlaylistID); ok {
+					count = len(pl.TrackIDs)
+				}
+			}
+		case "favorites":
+			count = len(m.Library.GetFavorites())
+		case "recent":
+			count = len(m.Library.GetRecent())
+		}
+	}
+	headerText = fmt.Sprintf("%s (%d)", headerText, count)
+
+	headerStyle := lipgloss.NewStyle().
+		Width(width).
+		Bold(true).
+		Foreground(m.Theme.Header)
+
+	listHeight := height - 1
+	var tracks []string
+	tracks = append(tracks, headerStyle.Render(headerText))
+
+	switch m.FilterView {
+	case "playlists":
+		if m.Library != nil && m.SelectedPlaylistID != "" {
+			if pl, ok := m.Library.GetPlaylist(m.SelectedPlaylistID); ok {
+				for i, tid := range pl.TrackIDs {
+					prefix := "  "
+					if i == m.SelectedTrackIndex {
+						prefix = "> "
+					}
+					tracks = append(tracks, prefix+tid)
+				}
+			}
+		}
+	case "favorites":
+		if m.Library != nil {
+			favorites := m.Library.GetFavorites()
+			for i, tr := range favorites {
+				prefix := "  "
+				marker := " "
+				if tr.ID == m.Track.ID {
+					marker = "▶"
+				}
+				if i == m.SelectedTrackIndex {
+					prefix = "> "
+				}
+				tracks = append(tracks, fmt.Sprintf("%s%s %s - %s", prefix, marker, tr.Title, tr.Artist))
+			}
+		}
+	case "recent":
+		if m.Library != nil {
+			recent := m.Library.GetRecent()
+			for i, tr := range recent {
+				prefix := "  "
+				marker := " "
+				if tr.ID == m.Track.ID {
+					marker = "▶"
+				}
+				if i == m.SelectedTrackIndex {
+					prefix = "> "
+				}
+				tracks = append(tracks, fmt.Sprintf("%s%s %s - %s", prefix, marker, tr.Title, tr.Artist))
+			}
+		}
+	}
+
+	if len(tracks) == 1 { // only header
+		emptyStyle := lipgloss.NewStyle().
+			Width(width).
+			Height(listHeight).
+			Align(lipgloss.Center, lipgloss.Center).
+			Foreground(m.Theme.MenuDim)
+		tracks = append(tracks, emptyStyle.Render("No tracks"))
+	}
+
+	// Pad to fill height
+	for len(tracks) < height {
+		tracks = append(tracks, "")
+	}
+	if len(tracks) > height {
+		tracks = tracks[:height]
+	}
+
+	contentStyle := lipgloss.NewStyle().
+		Width(width).
+		Height(height)
+
+	return contentStyle.Render(strings.Join(tracks, "\n"))
 }
 
 // lipglossToAnsi converts a lipgloss.Color (string) to its raw ANSI escape
