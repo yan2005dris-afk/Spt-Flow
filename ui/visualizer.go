@@ -82,7 +82,9 @@ func (v *Visualizer) Render(height int) []string {
 		return nil
 	}
 
-	blocks := []rune{' ', '|', '/', '\\', '#'}
+	// Unicode block elements that show different vertical heights
+	// in a single cell — creates the "bars going up/down" effect.
+	blocks := []rune{' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 	lines := make([]string, height)
 
 	for y := height - 1; y >= 0; y-- {
@@ -94,16 +96,16 @@ func (v *Visualizer) Render(height int) []string {
 			cellH := scaledH - float64(y)
 
 			if cellH >= 1.0 {
-				sb.WriteRune('#')
+				sb.WriteRune('█')
 			} else if cellH <= 0 {
 				sb.WriteRune(' ')
 			} else {
-				idx := int(cellH * 4)
+				idx := int(cellH * 8)
 				if idx < 0 {
 					idx = 0
 				}
-				if idx > 4 {
-					idx = 4
+				if idx > 8 {
+					idx = 8
 				}
 				sb.WriteRune(blocks[idx])
 			}
