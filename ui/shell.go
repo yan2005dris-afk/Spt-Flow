@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -728,10 +729,13 @@ func renderVisualizer(m Model, width, height int) string {
 	}
 	lines := m.Visualizer.Render(height)
 
-	// Use VisualizerBackground color for audio-driven mode,
-	// Use raw ANSI codes instead of lipgloss to avoid rendering issues.
-	// \x1b[93m = bright yellow, \x1b[0m = reset
-	ansiColor := "\x1b[93m" // bright yellow - highly visible
+	// Pick the active theme color. Audio mode → VisualizerBackground;
+	// procedural mode → Visualizer.
+	lipglossColor := m.Theme.Visualizer
+	if m.Visualizer.AudioCapture != nil {
+		lipglossColor = m.Theme.VisualizerBackground
+	}
+	ansiColor := lipglossToAnsi(lipglossColor)
 	ansiReset := "\x1b[0m"
 	var styledLines []string
 	for _, l := range lines {
@@ -742,4 +746,41 @@ func renderVisualizer(m Model, width, height int) string {
 		}
 	}
 	return strings.Join(styledLines, "\n")
+}
+
+// lipglossToAnsi converts a lipgloss.Color (string) to its raw ANSI escape
+// sequence for foreground color. Supports both hex colors ("#rrggbb") and
+// ANSI numbers ("15", "12", "256:N").
+func lipglossToAnsi(c lipgloss.Color) string {
+	s := string(c)
+	if strings.HasPrefix(s, "#") {
+		return hexToAnsi(s)
+	}
+	// ANSI 16-color
+	if n, err := strconv.Atoi(s); err == nil && n >= 0 && n <= 15 {
+		if n < 8 {
+			return fmt.Sprintf("\x1b[%dm", 30+n)
+		}
+		return fmt.Sprintf("\x1b[%dm", 90+n-8)
+	}
+	// 256-color: "256:N"
+	if strings.HasPrefix(s, "256:") {
+		if n, err := strconv.Atoi(strings.TrimPrefix(s, "256:")); err == nil {
+			return fmt.Sprintf("\x1b[38;5;%dm", n)
+		}
+	}
+	// Fallback
+	return "\x1b[93m" // bright yellow
+}
+
+// hexToAnsi converts "#rrggbb" to a 24-bit ANSI foreground escape.
+func hexToAnsi(hex string) string {
+	hex = strings.TrimPrefix(hex, "#")
+	if len(hex) != 6 {
+		return "\x1b[93m"
+	}
+	r, _ := strconv.ParseUint(hex[0:2], 16, 8)
+	g, _ := strconv.ParseUint(hex[2:4], 16, 8)
+	b, _ := strconv.ParseUint(hex[4:6], 16, 8)
+	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", r, g, b)
 }
