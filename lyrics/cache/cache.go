@@ -117,7 +117,7 @@ func (s *Store) Clear() error {
 	}
 	_, err = f.WriteString("{}\n")
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	return f.Close()
@@ -168,16 +168,16 @@ func (s *Store) writeAtomic() error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 
 	enc := json.NewEncoder(tmp)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(s.entries); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {

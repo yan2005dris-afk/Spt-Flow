@@ -135,7 +135,7 @@ func runSetup() error {
 	for {
 		select {
 		case <-timeout:
-			cmd.Process.Kill()
+			_ = cmd.Process.Kill()
 			return fmt.Errorf("authentication timed out after 60 seconds")
 		case err := <-done:
 			return fmt.Errorf("librespot exited before authentication: %w", err)
@@ -147,7 +147,7 @@ func runSetup() error {
 					fmt.Println("\nAuthentication successful!")
 					return nil
 				}
-				client.Close()
+				_ = client.Close()
 			}
 		}
 	}

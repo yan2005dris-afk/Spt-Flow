@@ -139,7 +139,7 @@ func (ac *AudioCapture) Close() error {
 	ac.closed = true
 
 	if ac.stream != nil {
-		ac.stream.Close()
+		_ = ac.stream.Close()
 		ac.stream = nil
 	}
 

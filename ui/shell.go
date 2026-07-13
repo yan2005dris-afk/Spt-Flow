@@ -158,7 +158,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.SpotifyRunning = false
 			m.PlaybackStatus = "Paused"
 			if m.MprisClient != nil {
-				m.MprisClient.Close()
+				_ = m.MprisClient.Close()
 				m.MprisClient = nil
 			}
 			m.SignalChan = nil
@@ -312,10 +312,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return MenuChoiceMsg{Choice: menuChoices[m.SelectedMenuOption]} }
 			case "q", "ctrl+c":
 				if m.MprisClient != nil {
-					m.MprisClient.Close()
+					_ = m.MprisClient.Close()
 				}
 				if m.Visualizer != nil && m.Visualizer.AudioCapture != nil {
-					m.Visualizer.AudioCapture.Close()
+					_ = m.Visualizer.AudioCapture.Close()
 				}
 				return m, tea.Quit
 			}
@@ -338,10 +338,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			if m.MprisClient != nil {
-				m.MprisClient.Close()
+				_ = m.MprisClient.Close()
 			}
 			if m.Visualizer != nil && m.Visualizer.AudioCapture != nil {
-				m.Visualizer.AudioCapture.Close()
+				_ = m.Visualizer.AudioCapture.Close()
 			}
 			return m, tea.Quit
 		}
@@ -511,10 +511,6 @@ func (m *Model) watchSignalCmd() tea.Cmd {
 		}
 		return SpotifySignalMsg{}
 	}
-}
-
-func (m *Model) watchSignalsCmd() tea.Cmd {
-	return m.watchSignalCmd()
 }
 
 func (m *Model) pollSpotifyCmd() tea.Cmd {

@@ -19,7 +19,9 @@ func TestAudioCapture_WriteRead(t *testing.T) {
 		bits := math.Float32bits(s)
 		bytes := make([]byte, 4)
 		binary.LittleEndian.PutUint32(bytes, bits)
-		ac.Write(bytes)
+		if _, err := ac.Write(bytes); err != nil {
+			t.Fatalf("Write() = %v", err)
+		}
 	}
 
 	// Read them back
@@ -49,7 +51,9 @@ func TestAudioCapture_WrapAround(t *testing.T) {
 		bits := math.Float32bits(float32(i))
 		bytes := make([]byte, 4)
 		binary.LittleEndian.PutUint32(bytes, bits)
-		ac.Write(bytes)
+		if _, err := ac.Write(bytes); err != nil {
+			t.Fatalf("Write() = %v", err)
+		}
 	}
 
 	// Read 5 samples - should get first 5
@@ -71,7 +75,9 @@ func TestAudioCapture_WrapAround(t *testing.T) {
 		bits := math.Float32bits(float32(100 + i))
 		bytes := make([]byte, 4)
 		binary.LittleEndian.PutUint32(bytes, bits)
-		ac.Write(bytes)
+		if _, err := ac.Write(bytes); err != nil {
+			t.Fatalf("Write() = %v", err)
+		}
 	}
 
 	// Read 5 samples - should get remaining 5 from first batch (5,6,7,8,9)
@@ -102,7 +108,9 @@ func TestAudioCapture_OverwriteOldSamples(t *testing.T) {
 		bits := math.Float32bits(float32(i))
 		bytes := make([]byte, 4)
 		binary.LittleEndian.PutUint32(bytes, bits)
-		ac.Write(bytes)
+		if _, err := ac.Write(bytes); err != nil {
+			t.Fatalf("Write() = %v", err)
+		}
 	}
 
 	// Write 5 more samples (overwriting first 5: 0,1,2,3,4)
@@ -111,7 +119,9 @@ func TestAudioCapture_OverwriteOldSamples(t *testing.T) {
 		bits := math.Float32bits(float32(100 + i))
 		bytes := make([]byte, 4)
 		binary.LittleEndian.PutUint32(bytes, bits)
-		ac.Write(bytes)
+		if _, err := ac.Write(bytes); err != nil {
+			t.Fatalf("Write() = %v", err)
+		}
 	}
 
 	// Read all 10 samples - should get [5,6,7,8,9,100,101,102,103,104]
@@ -142,7 +152,9 @@ func TestAudioCapture_ReadFewerThanAvailable(t *testing.T) {
 		bits := math.Float32bits(float32(i))
 		bytes := make([]byte, 4)
 		binary.LittleEndian.PutUint32(bytes, bits)
-		ac.Write(bytes)
+		if _, err := ac.Write(bytes); err != nil {
+			t.Fatalf("Write() = %v", err)
+		}
 	}
 
 	// Read only 3
@@ -196,7 +208,9 @@ func TestAudioCapture_ReadAfterClose(t *testing.T) {
 		buffer: make([]float32, 2048),
 		size:   2048,
 	}
-	ac.Close()
+	if err := ac.Close(); err != nil {
+		t.Fatalf("Close() = %v", err)
+	}
 
 	// Read after close should return 0
 	out := make([]float32, 10)

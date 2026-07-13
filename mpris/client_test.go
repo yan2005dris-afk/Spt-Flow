@@ -256,12 +256,16 @@ func TestMprisClient_LaunchSpotify_FlatpakDetection(t *testing.T) {
 	origFlatpak := os.Getenv("FLATPAK_ID")
 	origSnap := os.Getenv("SNAP_NAME")
 	defer func() {
-		os.Setenv("FLATPAK_ID", origFlatpak)
-		os.Setenv("SNAP_NAME", origSnap)
+		_ = os.Setenv("FLATPAK_ID", origFlatpak)
+		_ = os.Setenv("SNAP_NAME", origSnap)
 	}()
 
-	os.Setenv("FLATPAK_ID", "spotify")
-	os.Setenv("SNAP_NAME", "")
+	if err := os.Setenv("FLATPAK_ID", "spotify"); err != nil {
+		t.Fatalf("Setenv(FLATPAK_ID) = %v", err)
+	}
+	if err := os.Setenv("SNAP_NAME", ""); err != nil {
+		t.Fatalf("Setenv(SNAP_NAME) = %v", err)
+	}
 
 	mockObj := &mockDBusObject{}
 	mockConn := &mockDBusConnection{obj: mockObj, ownerName: ""}
@@ -276,12 +280,16 @@ func TestMprisClient_LaunchSpotify_SnapDetection(t *testing.T) {
 	origFlatpak := os.Getenv("FLATPAK_ID")
 	origSnap := os.Getenv("SNAP_NAME")
 	defer func() {
-		os.Setenv("FLATPAK_ID", origFlatpak)
-		os.Setenv("SNAP_NAME", origSnap)
+		_ = os.Setenv("FLATPAK_ID", origFlatpak)
+		_ = os.Setenv("SNAP_NAME", origSnap)
 	}()
 
-	os.Setenv("FLATPAK_ID", "")
-	os.Setenv("SNAP_NAME", "spotify")
+	if err := os.Setenv("FLATPAK_ID", ""); err != nil {
+		t.Fatalf("Setenv(FLATPAK_ID) = %v", err)
+	}
+	if err := os.Setenv("SNAP_NAME", "spotify"); err != nil {
+		t.Fatalf("Setenv(SNAP_NAME) = %v", err)
+	}
 
 	mockObj := &mockDBusObject{}
 	mockConn := &mockDBusConnection{obj: mockObj, ownerName: ""}
@@ -296,12 +304,16 @@ func TestMprisClient_LaunchSpotify_Success(t *testing.T) {
 	origFlatpak := os.Getenv("FLATPAK_ID")
 	origSnap := os.Getenv("SNAP_NAME")
 	defer func() {
-		os.Setenv("FLATPAK_ID", origFlatpak)
-		os.Setenv("SNAP_NAME", origSnap)
+		_ = os.Setenv("FLATPAK_ID", origFlatpak)
+		_ = os.Setenv("SNAP_NAME", origSnap)
 	}()
 
-	os.Setenv("FLATPAK_ID", "")
-	os.Setenv("SNAP_NAME", "")
+	if err := os.Setenv("FLATPAK_ID", ""); err != nil {
+		t.Fatalf("Setenv(FLATPAK_ID) = %v", err)
+	}
+	if err := os.Setenv("SNAP_NAME", ""); err != nil {
+		t.Fatalf("Setenv(SNAP_NAME) = %v", err)
+	}
 
 	mockObj := &mockDBusObject{}
 	mockConn := &mockDBusConnection{obj: mockObj}
@@ -363,8 +375,8 @@ func TestMprisClient_KillSpotify_WithProcess(t *testing.T) {
 	case <-done:
 		// ok — sleep exited cleanly after SIGTERM
 	case <-time.After(3 * time.Second):
-		syscall.Kill(-pid, syscall.SIGKILL)
-		cmd.Wait()
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		_ = cmd.Wait()
 		t.Log("sleep ignored SIGTERM; SIGKILL was used as fallback (test-only)")
 	}
 
@@ -409,9 +421,11 @@ func TestIsSpotifyDesktopRunning_False(t *testing.T) {
 
 func TestLaunchLibrespot_BinaryNotFound(t *testing.T) {
 	origPath := os.Getenv("PATH")
-	defer os.Setenv("PATH", origPath)
+	defer func() { _ = os.Setenv("PATH", origPath) }()
 
-	os.Setenv("PATH", "")
+	if err := os.Setenv("PATH", ""); err != nil {
+		t.Fatalf("Setenv(PATH) = %v", err)
+	}
 
 	mockObj := &mockDBusObject{}
 	mockConn := &mockDBusConnection{obj: mockObj}
@@ -424,13 +438,15 @@ func TestLaunchLibrespot_BinaryNotFound(t *testing.T) {
 
 func TestLaunchLibrespot_DesktopRunning(t *testing.T) {
 	origPath := os.Getenv("PATH")
-	defer os.Setenv("PATH", origPath)
+	defer func() { _ = os.Setenv("PATH", origPath) }()
 
 	// Use a PATH that won't contain librespot but won't fail LookPath
 	// We need to test that desktop running check happens AFTER binary check
 	// Since we can't easily mock exec.LookPath, we test the error path
 	// when desktop IS running but binary is not found - binary error takes precedence
-	os.Setenv("PATH", "/nonexistent")
+	if err := os.Setenv("PATH", "/nonexistent"); err != nil {
+		t.Fatalf("Setenv(PATH) = %v", err)
+	}
 
 	mockObj := &mockDBusObject{}
 	mockConn := &mockDBusConnection{
