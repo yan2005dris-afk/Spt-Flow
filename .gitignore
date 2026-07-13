@@ -8,6 +8,7 @@ coverage.out
 # Atlas / SDD artifacts
 .atl/
 .codegraph/
+sdd/
 
 # IDE
 .idea/

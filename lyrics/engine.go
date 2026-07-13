@@ -124,14 +124,14 @@ func (c *Client) FetchLyrics(title, artist, album string, duration time.Duration
 
 	resp, err := c.HTTPClient.Get(u.String())
 	if err == nil && resp.StatusCode == http.StatusOK {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		var track TrackResponse
 		if err := json.NewDecoder(resp.Body).Decode(&track); err == nil {
 			return c.processResponse(track)
 		}
 	}
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	// 2. Fall back to search via /api/search
@@ -147,7 +147,7 @@ func (c *Client) FetchLyrics(title, artist, album string, duration time.Duration
 	if err != nil {
 		return Lyrics{}, err
 	}
-	defer sresp.Body.Close()
+	defer func() { _ = sresp.Body.Close() }()
 
 	if sresp.StatusCode != http.StatusOK {
 		return Lyrics{}, fmt.Errorf("lyrics not found (status %d)", sresp.StatusCode)

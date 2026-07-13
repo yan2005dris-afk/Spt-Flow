@@ -22,7 +22,7 @@ func makeTestStore(t *testing.T, path string) (*Store, func()) {
 		t.Fatalf("New() = %v", err)
 	}
 	cleanup := func() {
-		os.Remove(path)
+		_ = os.Remove(path)
 	}
 	return store, cleanup
 }
@@ -69,7 +69,7 @@ func TestStore_Get_ColdStart(t *testing.T) {
 	ts := makeServer(t, func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&callCount, 1)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"id": 1,
 			"name": "Test Song",
 			"artistName": "Test Artist",
@@ -110,7 +110,7 @@ func TestStore_Get_CacheHit(t *testing.T) {
 	ts := makeServer(t, func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&callCount, 1)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"id": 1,
 			"name": "Cached Song",
 			"artistName": "Cached Artist",
@@ -155,7 +155,7 @@ func TestStore_Get_Stale(t *testing.T) {
 	ts := makeServer(t, func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&callCount, 1)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"id": 1,
 			"name": "Stale Song",
 			"artistName": "Stale Artist",
@@ -205,7 +205,7 @@ func TestStore_Get_LRUEviction(t *testing.T) {
 	ts := makeServer(t, func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&callCount, 1)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"id": 1,
 			"name": "New Song",
 			"artistName": "New Artist",
@@ -265,10 +265,8 @@ func TestStore_Get_Key(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		name := tt.name1 + "_vs_" + tt.album1
-		if tt.wantSame {
-			name = tt.name1 + "_same"
-		} else {
+		name := tt.name1 + "_same"
+		if !tt.wantSame {
 			name = tt.name1 + "_diff"
 		}
 		t.Run(name, func(t *testing.T) {
@@ -294,7 +292,7 @@ func TestStore_Get_ConcurrentSameKey(t *testing.T) {
 		atomic.AddInt32(&callCount, 1)
 		<-blockCh // block until we release
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"id": 1,
 			"name": "Concurrent Song",
 			"artistName": "Concurrent Artist",
@@ -349,7 +347,7 @@ func TestStore_Clear(t *testing.T) {
 	ts := makeServer(t, func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&callCount, 1)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"id": 1,
 			"name": "Clear Song",
 			"artistName": "Clear Artist",
@@ -412,11 +410,11 @@ func TestStore_Get_DiskWriteFailure(t *testing.T) {
 	if err := os.Chmod(dir, 0500); err != nil {
 		t.Fatalf("Chmod() = %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(dir, 0700) })
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
 
 	ts := makeServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
+		_, _ = w.Write([]byte(`{
 			"id": 1,
 			"name": "Disk Fail",
 			"artistName": "Test",

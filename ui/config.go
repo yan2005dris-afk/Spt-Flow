@@ -95,17 +95,17 @@ func (c *Config) Save() error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 
 	enc := json.NewEncoder(tmp)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(raw); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		fmt.Fprintf(os.Stderr, "config: write failed: %v\n", err)
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		fmt.Fprintf(os.Stderr, "config: sync failed: %v\n", err)
 		return err
 	}

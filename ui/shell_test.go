@@ -159,13 +159,13 @@ func TestShell_Update_KeyboardEvents(t *testing.T) {
 	}
 
 	// Pressing 'q' should quit the app
-	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	if cmd() != tea.Quit() {
 		t.Error("Expected key 'q' to trigger tea.Quit")
 	}
 
 	// Pressing 'j' should scroll down plain lyrics
-	newM, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	resM := newM.(Model)
 	if resM.ScrollOffset != 1 {
 		t.Errorf("Expected 'j' keypress to scroll down and set offset to 1, got %d", resM.ScrollOffset)
