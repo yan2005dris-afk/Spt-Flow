@@ -51,7 +51,8 @@ type Model struct {
 	Width, Height      int
 	ScrollOffset       int
 	SpotifyRunning     bool
-	ErrorMessage       string
+	LoadingMessage     string // e.g. "Cargando letras..." — transient loading state
+	ErrorMessage       string // actual errors
 	Visualizer         *Visualizer
 	SignalChan         chan *dbus.Signal
 	LaunchedSpotify    bool   // set true after first successful LaunchSpotify
@@ -149,13 +150,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Track = msg.Track
 			m.ScrollOffset = 0
 			m.Lyrics = lyrics.Lyrics{}
-			m.ErrorMessage = "Fetching lyrics..."
+			m.LoadingMessage = "Cargando letras..."
+			m.ErrorMessage = ""
 			cmds = append(cmds, m.fetchLyricsCmd(msg.Track))
 		}
 
 		return m, tea.Batch(cmds...)
 
 	case LyricsMsg:
+		m.LoadingMessage = ""
 		if msg.Err != nil {
 			m.ErrorMessage = msg.Err.Error()
 			m.Lyrics = lyrics.Lyrics{}
@@ -579,6 +582,13 @@ func formatDuration(d time.Duration) string {
 
 func renderLyrics(m Model, width, height int) string {
 	if len(m.Lyrics.Lines) == 0 {
+		if m.LoadingMessage != "" {
+			return lipgloss.NewStyle().
+				Width(width).
+				Align(lipgloss.Center).
+				Foreground(DefaultTheme.Waiting).
+				Render(m.LoadingMessage)
+		}
 		if m.ErrorMessage != "" {
 			return lipgloss.NewStyle().
 				Width(width).
