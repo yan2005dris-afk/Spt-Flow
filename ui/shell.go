@@ -193,16 +193,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case ChoiceStartSpotifyDesktop:
 			client, err := mpris.NewClient()
-			if err == nil {
-				m.MprisClient = client
-				if !m.MprisClient.IsRunning() {
-					cmd := exec.Command("spotify")
-					cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-					if startErr := cmd.Start(); startErr == nil {
-						m.MprisClient.SetSpotifyCmd(cmd)
-						m.LaunchedSpotify = true
-					}
+			if err != nil {
+				m.ErrorMessage = "Cannot connect to D-Bus: " + err.Error()
+				return m, menuTickCmd(3 * time.Second)
+			}
+			m.MprisClient = client
+			if !m.MprisClient.IsRunning() {
+				cmd := exec.Command("spotify")
+				cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+				if startErr := cmd.Start(); startErr != nil {
+					m.ErrorMessage = "Spotify not found. Install Spotify or use Librespot."
+					return m, menuTickCmd(3 * time.Second)
 				}
+				m.MprisClient.SetSpotifyCmd(cmd)
+				m.LaunchedSpotify = true
 			}
 			m.ViewState = "tui"
 			return m, tea.Batch(m.pollSpotifyCmd(), m.tickCmd(), pollTickCmd())
@@ -274,6 +278,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "?" {
 			m.ShowingHelp = true
 			return m, menuTickCmd(5 * time.Second)
+		}
+
+		// ESC key returns to menu from TUI
+		if msg.String() == "esc" {
+			m.ViewState = "menu"
+			m.SelectedMenuOption = 0
+			return m, nil
 		}
 
 		switch msg.String() {
