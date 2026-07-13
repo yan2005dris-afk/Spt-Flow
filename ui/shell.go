@@ -396,24 +396,38 @@ func (m Model) View() string {
 		mainHeight = 0
 	}
 
-	// Lyrics fill the main area, visualizer bars at bottom (only when playing, wide screens).
+	// Lyrics fill the main area, visualizer bars at bottom (always when wide screen).
 	var mainArea string
-	if m.Width >= 80 && m.PlaybackStatus == "Playing" {
-		visRow := 3
-		lyricsHeight := mainHeight - visRow
-		if lyricsHeight < 3 {
-			lyricsHeight = mainHeight
-			visRow = 0
+	visRow := 3
+	showVis := m.Width >= 80 && visRow < mainHeight
+	if !showVis {
+		visRow = 0
+	}
+
+	lyricsHeight := mainHeight - visRow
+	if lyricsHeight < 3 {
+		lyricsHeight = mainHeight
+		visRow = 0
+	}
+
+	lyricsContent := renderLyrics(m, m.Width, lyricsHeight)
+	if visRow > 0 {
+		// DEBUG: hardcoded test bars to confirm rendering
+		testBars := strings.Repeat("\x1b[93m#\x1b[0m", m.Width)
+		var testVisualizer strings.Builder
+		for i := 0; i < visRow; i++ {
+			if i == visRow-1 {
+				testVisualizer.WriteString(testBars)
+			} else {
+				testVisualizer.WriteString(strings.Repeat(" ", m.Width))
+			}
+			if i < visRow-1 {
+				testVisualizer.WriteString("\n")
+			}
 		}
-		lyricsContent := renderLyrics(m, m.Width, lyricsHeight)
-		if visRow > 0 {
-			visBars := renderVisualizer(m, m.Width, visRow)
-			mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visBars)
-		} else {
-			mainArea = lyricsContent
-		}
+		mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, testVisualizer.String())
 	} else {
-		mainArea = renderLyrics(m, m.Width, mainHeight)
+		mainArea = lyricsContent
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, mainArea, footer)
