@@ -121,8 +121,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.Visualizer.Update(false)
 		}
-		// DEBUG to stderr so it doesn't corrupt TUI output
-		fmt.Fprintf(os.Stderr, "DEBUG status=%q running=%v\n", m.PlaybackStatus, m.SpotifyRunning)
 		m.LastUpdated = time.Now()
 		return m, m.tickCmd()
 
@@ -687,16 +685,17 @@ func renderVisualizer(m Model, width, height int) string {
 	lines := m.Visualizer.Render(height)
 
 	// Use VisualizerBackground color for audio-driven mode,
-	// and Visualizer color for procedural mode.
-	color := DefaultTheme.Visualizer
-	if m.Visualizer.AudioCapture != nil {
-		color = DefaultTheme.VisualizerBackground
-	}
-
-	style := lipgloss.NewStyle().Foreground(color)
+	// Use raw ANSI codes instead of lipgloss to avoid rendering issues.
+	// \x1b[93m = bright yellow, \x1b[0m = reset
+	ansiColor := "\x1b[93m" // bright yellow - highly visible
+	ansiReset := "\x1b[0m"
 	var styledLines []string
 	for _, l := range lines {
-		styledLines = append(styledLines, style.Render(l))
+		if l != "" {
+			styledLines = append(styledLines, ansiColor+l+ansiReset)
+		} else {
+			styledLines = append(styledLines, l)
+		}
 	}
 	return strings.Join(styledLines, "\n")
 }
