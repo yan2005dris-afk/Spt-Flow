@@ -409,8 +409,21 @@ func (m Model) View() string {
 
 		lyricsContent := renderLyrics(m, m.Width, contentHeight)
 		if visRowHeight > 0 {
-			visContent := renderVisualizer(m, m.Width, visRowHeight)
-			mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visContent)
+			visBarHeight := visRowHeight - 1 // reserve 1 row for navbar
+			visContent := renderVisualizer(m, m.Width, visBarHeight)
+			navbar := lipgloss.NewStyle().
+				Width(m.Width).
+				Foreground(lipgloss.Color("15")).
+				Bold(true).
+				Render(m.Track.Title + " - " + m.Track.Artist)
+			visWithNavbar := lipgloss.JoinVertical(lipgloss.Left, navbar, visContent)
+			visBordered := lipgloss.NewStyle().
+				Border(lipgloss.NormalBorder()).
+				BorderForeground(lipgloss.Color("8")).
+				Width(m.Width).
+				Height(visRowHeight).
+				Render(visWithNavbar)
+			mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visBordered)
 		} else {
 			mainArea = lyricsContent
 		}
