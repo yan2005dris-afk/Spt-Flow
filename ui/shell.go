@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"tui-spotify/lyrics"
+	"tui-spotify/lyrics/cache"
 	"tui-spotify/mpris"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -44,6 +45,7 @@ type LyricsMsg struct {
 type Model struct {
 	MprisClient        *mpris.Client
 	LyricsClient       *lyrics.Client
+	LyricsCache        *cache.Store
 	Track              mpris.Track
 	Lyrics             lyrics.Lyrics
 	PlaybackStatus     string
@@ -539,7 +541,23 @@ func (m *Model) fetchLyricsCmd(track mpris.Track) tea.Cmd {
 		if m.LyricsClient == nil {
 			m.LyricsClient = lyrics.NewClient("")
 		}
-		lyr, err := m.LyricsClient.FetchLyrics(track.Title, track.Artist, track.Album, track.Duration)
+		if m.LyricsCache == nil {
+			cacheDir, _ := os.UserCacheDir()
+			cachePath := filepath.Join(cacheDir, "spt-flow", "lyrics.json")
+			store, err := cache.New(cachePath, m.LyricsClient)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cache: init failed: %v\n", err)
+			} else {
+				m.LyricsCache = store
+			}
+		}
+		var lyr lyrics.Lyrics
+		var err error
+		if m.LyricsCache != nil {
+			lyr, err = m.LyricsCache.Get(track.Title, track.Artist, track.Album, track.Duration)
+		} else {
+			lyr, err = m.LyricsClient.FetchLyrics(track.Title, track.Artist, track.Album, track.Duration)
+		}
 		if err != nil {
 			return LyricsMsg{Err: err}
 		}
