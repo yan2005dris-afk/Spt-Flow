@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -60,10 +61,11 @@ type Model struct {
 	SignalChan         chan *dbus.Signal
 	LaunchedSpotify    bool   // set true after first successful LaunchSpotify
 	ViewState          string // "menu" or "tui"
-	SelectedMenuOption int    // 0-3 for menu navigation
+	SelectedMenuOption int    // 0-5 for menu navigation
 	ShowingHelp        bool   // for ? overlay
 	HelpTimer          bool   // if true, ? overlay auto-dismisses
 	StatusMessage      string // for check-status option
+	Theme              Theme  // active palette
 }
 
 func mustHome() string {
@@ -86,12 +88,19 @@ func NewModel(viewState string) Model {
 		visualizer.sampleBuf = make([]float32, DFTInputSize)
 	}
 
+	cfg, _ := LoadConfig()
+	theme := Themes[cfg.Theme]
+	if theme == (Theme{}) {
+		theme = Themes["default"]
+	}
+
 	return Model{
 		LastUpdated:        time.Now(),
 		Visualizer:         visualizer,
 		ViewState:          viewState,
 		SelectedMenuOption: 0,
 		ShowingHelp:        false,
+		Theme:              theme,
 	}
 }
 
@@ -266,6 +275,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ChoiceHelp:
 			m.ShowingHelp = true
 			return m, menuTickCmd(5 * time.Second)
+
+		case ChoiceCycleTheme:
+			nextName := CycleTheme(m.Theme.Name())
+			m.Theme = Themes[nextName]
+			cfg, _ := LoadConfig()
+			cfg.Theme = nextName
+			_ = cfg.Save() // log errors inside Save
+			return m, nil
 		}
 		return m, nil
 
@@ -288,12 +305,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.ViewState == "menu" {
 			switch msg.String() {
 			case "j", "down":
-				m.SelectedMenuOption = (m.SelectedMenuOption + 1) % 5
+				m.SelectedMenuOption = (m.SelectedMenuOption + 1) % len(menuChoices)
 			case "k", "up":
-				m.SelectedMenuOption = (m.SelectedMenuOption - 1 + 5) % 5
+				m.SelectedMenuOption = (m.SelectedMenuOption - 1 + len(menuChoices)) % len(menuChoices)
 			case "enter":
-				choices := []string{ChoiceStartLibrespot, ChoiceTUIOnly, ChoiceCheckStatus, ChoiceHelp, ChoiceStartSpotifyDesktop}
-				return m, func() tea.Msg { return MenuChoiceMsg{Choice: choices[m.SelectedMenuOption]} }
+				return m, func() tea.Msg { return MenuChoiceMsg{Choice: menuChoices[m.SelectedMenuOption]} }
 			case "q", "ctrl+c":
 				if m.MprisClient != nil {
 					m.MprisClient.Close()
@@ -568,7 +584,7 @@ func (m *Model) fetchLyricsCmd(track mpris.Track) tea.Cmd {
 func renderHeader(m Model) string {
 	style := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(DefaultTheme.Header).
+		Foreground(m.Theme.Header).
 		Padding(0, 1)
 
 	trackInfo := fmt.Sprintf("%s - %s", m.Track.Title, m.Track.Artist)
@@ -607,9 +623,9 @@ func renderFooter(m Model) string {
 	footerStyle := lipgloss.NewStyle().
 		Padding(0, 1)
 	if !m.SpotifyRunning {
-		footerStyle = footerStyle.Foreground(DefaultTheme.Waiting)
+		footerStyle = footerStyle.Foreground(m.Theme.Waiting)
 	} else {
-		footerStyle = footerStyle.Foreground(DefaultTheme.Footer)
+		footerStyle = footerStyle.Foreground(m.Theme.Footer)
 	}
 	return footerStyle.Render(info)
 }
@@ -643,14 +659,14 @@ func renderLyrics(m Model, width, height int) string {
 			return lipgloss.NewStyle().
 				Width(width).
 				Align(lipgloss.Center).
-				Foreground(DefaultTheme.Waiting).
+				Foreground(m.Theme.Waiting).
 				Render(m.LoadingMessage)
 		}
 		if m.ErrorMessage != "" {
 			return lipgloss.NewStyle().
 				Width(width).
 				Align(lipgloss.Center).
-				Foreground(DefaultTheme.Error).
+				Foreground(m.Theme.Error).
 				Render("Error: " + m.ErrorMessage)
 		}
 		return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render("No lyrics available")
@@ -676,9 +692,9 @@ func renderLyrics(m Model, width, height int) string {
 
 				style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center)
 				if lineIdx == active {
-					style = style.Foreground(DefaultTheme.LyricActive).Bold(true)
+					style = style.Foreground(m.Theme.LyricActive).Bold(true)
 				} else {
-					style = style.Foreground(DefaultTheme.LyricInactive)
+					style = style.Foreground(m.Theme.LyricInactive)
 				}
 				renderedLines = append(renderedLines, style.Render(content))
 			} else {
@@ -694,7 +710,7 @@ func renderLyrics(m Model, width, height int) string {
 				if len(content) > width {
 					content = content[:width]
 				}
-				style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Foreground(DefaultTheme.LyricPlain)
+				style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Foreground(m.Theme.LyricPlain)
 				renderedLines = append(renderedLines, style.Render(content))
 			} else {
 				renderedLines = append(renderedLines, "")
@@ -713,10 +729,13 @@ func renderVisualizer(m Model, width, height int) string {
 	}
 	lines := m.Visualizer.Render(height)
 
-	// Use VisualizerBackground color for audio-driven mode,
-	// Use raw ANSI codes instead of lipgloss to avoid rendering issues.
-	// \x1b[93m = bright yellow, \x1b[0m = reset
-	ansiColor := "\x1b[93m" // bright yellow - highly visible
+	// Pick the active theme color. Audio mode → VisualizerBackground;
+	// procedural mode → Visualizer.
+	lipglossColor := m.Theme.Visualizer
+	if m.Visualizer.AudioCapture != nil {
+		lipglossColor = m.Theme.VisualizerBackground
+	}
+	ansiColor := lipglossToAnsi(lipglossColor)
 	ansiReset := "\x1b[0m"
 	var styledLines []string
 	for _, l := range lines {
@@ -727,4 +746,41 @@ func renderVisualizer(m Model, width, height int) string {
 		}
 	}
 	return strings.Join(styledLines, "\n")
+}
+
+// lipglossToAnsi converts a lipgloss.Color (string) to its raw ANSI escape
+// sequence for foreground color. Supports both hex colors ("#rrggbb") and
+// ANSI numbers ("15", "12", "256:N").
+func lipglossToAnsi(c lipgloss.Color) string {
+	s := string(c)
+	if strings.HasPrefix(s, "#") {
+		return hexToAnsi(s)
+	}
+	// ANSI 16-color
+	if n, err := strconv.Atoi(s); err == nil && n >= 0 && n <= 15 {
+		if n < 8 {
+			return fmt.Sprintf("\x1b[%dm", 30+n)
+		}
+		return fmt.Sprintf("\x1b[%dm", 90+n-8)
+	}
+	// 256-color: "256:N"
+	if strings.HasPrefix(s, "256:") {
+		if n, err := strconv.Atoi(strings.TrimPrefix(s, "256:")); err == nil {
+			return fmt.Sprintf("\x1b[38;5;%dm", n)
+		}
+	}
+	// Fallback
+	return "\x1b[93m" // bright yellow
+}
+
+// hexToAnsi converts "#rrggbb" to a 24-bit ANSI foreground escape.
+func hexToAnsi(hex string) string {
+	hex = strings.TrimPrefix(hex, "#")
+	if len(hex) != 6 {
+		return "\x1b[93m"
+	}
+	r, _ := strconv.ParseUint(hex[0:2], 16, 8)
+	g, _ := strconv.ParseUint(hex[2:4], 16, 8)
+	b, _ := strconv.ParseUint(hex[4:6], 16, 8)
+	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", r, g, b)
 }

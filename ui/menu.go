@@ -14,10 +14,20 @@ const (
 	ChoiceStartSpotifyDesktop = "start-spotify-desktop"
 	ChoiceTUIOnly             = "tui-only"
 	ChoiceCheckStatus         = "check-status"
+	ChoiceCycleTheme          = "cycle-theme"
 	ChoiceHelp                = "help"
 )
 
 const menuWidth = 40
+
+var menuChoices = []string{
+	ChoiceStartLibrespot,
+	ChoiceTUIOnly,
+	ChoiceCheckStatus,
+	ChoiceCycleTheme,
+	ChoiceHelp,
+	ChoiceStartSpotifyDesktop,
+}
 
 type MenuModel struct {
 	Selected int
@@ -42,12 +52,11 @@ func (m MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "j", "down":
-			m.Selected = (m.Selected + 1) % 5
+			m.Selected = (m.Selected + 1) % len(menuChoices)
 		case "k", "up":
-			m.Selected = (m.Selected - 1 + 5) % 5
+			m.Selected = (m.Selected - 1 + len(menuChoices)) % len(menuChoices)
 		case "enter":
-			choices := []string{ChoiceStartLibrespot, ChoiceTUIOnly, ChoiceCheckStatus, ChoiceHelp, ChoiceStartSpotifyDesktop}
-			return m, func() tea.Msg { return MenuChoiceMsg{Choice: choices[m.Selected]} }
+			return m, func() tea.Msg { return MenuChoiceMsg{Choice: menuChoices[m.Selected]} }
 		case "q":
 			return m, tea.Quit
 		}
@@ -121,37 +130,39 @@ func renderMenuView(m Model) string {
 	menuBox := lipgloss.NewStyle().
 		Width(boxWidth).
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(DefaultTheme.MenuBorder).
+		BorderForeground(m.Theme.MenuBorder).
 		Padding(1, 2)
 
 	titleStyle := lipgloss.NewStyle().
-		Foreground(DefaultTheme.MenuTitle).
+		Foreground(m.Theme.MenuTitle).
 		Bold(true).
 		Align(lipgloss.Center)
 
 	subtitleStyle := lipgloss.NewStyle().
-		Foreground(DefaultTheme.MenuDim).
+		Foreground(m.Theme.MenuDim).
 		Align(lipgloss.Center)
 
 	optionStyle := lipgloss.NewStyle().
-		Foreground(DefaultTheme.MenuOption)
+		Foreground(m.Theme.MenuOption)
 
 	selectedStyle := lipgloss.NewStyle().
-		Foreground(DefaultTheme.MenuSelected).
+		Foreground(m.Theme.MenuSelected).
 		Bold(true)
 
 	footerStyle := lipgloss.NewStyle().
-		Foreground(DefaultTheme.MenuDim).
+		Foreground(m.Theme.MenuDim).
 		Align(lipgloss.Center)
 
-	menuContent := fmt.Sprintf("%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s",
+	themeName := m.Theme.Name()
+	menuContent := fmt.Sprintf("%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s",
 		titleStyle.Render("Spt-Flow"),
 		subtitleStyle.Render("Spotify TUI Mirror"),
 		renderMenuOption(0, "Start with Librespot + TUI", m.SelectedMenuOption, optionStyle, selectedStyle),
 		renderMenuOption(1, "Open TUI only", m.SelectedMenuOption, optionStyle, selectedStyle),
 		renderMenuOption(2, "Check Spotify status", m.SelectedMenuOption, optionStyle, selectedStyle),
-		renderMenuOption(3, "Help / Keybindings", m.SelectedMenuOption, optionStyle, selectedStyle),
-		renderMenuOption(4, "Start with Spotify Desktop", m.SelectedMenuOption, optionStyle, selectedStyle),
+		renderMenuOption(3, fmt.Sprintf("Theme: %s", themeName), m.SelectedMenuOption, optionStyle, selectedStyle),
+		renderMenuOption(4, "Help / Keybindings", m.SelectedMenuOption, optionStyle, selectedStyle),
+		renderMenuOption(5, "Start with Spotify Desktop", m.SelectedMenuOption, optionStyle, selectedStyle),
 		footerStyle.Render("↑↓ navigate · Enter select · q quit"),
 	)
 
@@ -183,21 +194,21 @@ func renderMenuView(m Model) string {
 // renderKeybindingsOverlay renders a full-screen keybindings overlay
 func renderKeybindingsOverlay(m Model) string {
 	titleStyle := lipgloss.NewStyle().
-		Foreground(DefaultTheme.MenuTitle).
+		Foreground(m.Theme.MenuTitle).
 		Bold(true).
 		Align(lipgloss.Center)
 
 	keyStyle := lipgloss.NewStyle().
-		Foreground(DefaultTheme.MenuSelected).
+		Foreground(m.Theme.MenuSelected).
 		Bold(true)
 
 	descStyle := lipgloss.NewStyle().
-		Foreground(DefaultTheme.MenuOption)
+		Foreground(m.Theme.MenuOption)
 
 	boxStyle := lipgloss.NewStyle().
 		Width(50).
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(DefaultTheme.MenuBorder).
+		BorderForeground(m.Theme.MenuBorder).
 		Padding(1, 2)
 
 	var overlayContent strings.Builder
