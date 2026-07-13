@@ -396,58 +396,66 @@ func (m Model) View() string {
 		mainHeight = 0
 	}
 
-	// Layout: navbar | lyrics | visualizer bars (all stacked vertically).
-	// navbar: song title + artist, bold, centered
-	// lyrics: the actual lyrics content
-	// visualizer: bars at bottom, full width, with border
+	// Responsive layout:
+	// - Wide (>=80): navbar | lyrics | visualizer bars (stacked)
+	// - Narrow: lyrics only
 	var mainArea string
 	if m.Width >= 80 {
-		navbarHeight := 1
-		visRowHeight := 4
-		contentHeight := mainHeight - navbarHeight - visRowHeight
-		if contentHeight < 5 {
-			contentHeight = mainHeight
-			navbarHeight = 0
-			visRowHeight = 0
+		navbarRow := 1
+		visRow := 3
+		lyricsHeight := mainHeight - navbarRow - visRow
+		if lyricsHeight < 3 {
+			lyricsHeight = mainHeight
+			navbarRow = 0
+			visRow = 0
 		}
 
-		navbarContent := ""
-		if navbarHeight > 0 {
-			navbarStyle := lipgloss.NewStyle().
+		navbar := ""
+		if navbarRow > 0 {
+			navbar = lipgloss.NewStyle().
 				Width(m.Width).
 				Foreground(lipgloss.Color("15")).
 				Bold(true).
 				Align(lipgloss.Center).
 				Render(m.Track.Title + " - " + m.Track.Artist)
-			navbarContent = navbarStyle
 		}
 
-		lyricsContent := renderLyrics(m, m.Width, contentHeight)
+		lyrics := renderLyrics(m, m.Width, lyricsHeight)
 
-		visContent := ""
-		if visRowHeight > 0 {
-			visBars := renderVisualizer(m, m.Width, visRowHeight)
-			visBordered := lipgloss.NewStyle().
+		visBars := ""
+		if visRow > 0 {
+			visBars = renderVisualizer(m, m.Width, visRow)
+		}
+
+		// Stack: navbar + lyrics + visualizer bars
+		parts := []string{}
+		if navbar != "" {
+			parts = append(parts, navbar)
+		}
+		if lyrics != "" {
+			parts = append(parts, lyrics)
+		}
+		if visBars != "" {
+			// Visualizer bars get a border to separate from lyrics
+			visStyled := lipgloss.NewStyle().
 				Border(lipgloss.NormalBorder()).
 				BorderForeground(lipgloss.Color("8")).
 				Width(m.Width).
-				Height(visRowHeight).
 				Render(visBars)
-			visContent = visBordered
+			parts = append(parts, visStyled)
 		}
 
-		// Stack: navbar, lyrics, visualizer
-		if navbarContent != "" && visContent != "" {
-			mainArea = lipgloss.JoinVertical(lipgloss.Left, navbarContent, lyricsContent, visContent)
-		} else if navbarContent != "" {
-			mainArea = lipgloss.JoinVertical(lipgloss.Left, navbarContent, lyricsContent)
-		} else if visContent != "" {
-			mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visContent)
-		} else {
-			mainArea = lyricsContent
-		}
+		mainArea = lipgloss.JoinVertical(lipgloss.Left, parts...)
 	} else {
-		mainArea = renderLyrics(m, m.Width, mainHeight)
+		// Narrow: lyrics only, with navbar as first line
+		navbar := lipgloss.NewStyle().
+			Width(m.Width).
+			Foreground(lipgloss.Color("15")).
+			Bold(true).
+			Align(lipgloss.Center).
+			Render(m.Track.Title + " - " + m.Track.Artist)
+		lyrics := renderLyrics(m, m.Width, mainHeight-1)
+		mainArea = lipgloss.JoinVertical(lipgloss.Left, navbar, lyrics)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, mainArea, footer)
