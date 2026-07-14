@@ -2,10 +2,9 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -21,7 +20,6 @@ const (
 const menuWidth = 40
 
 var menuChoices = []string{
-	ChoiceStartLibrespot,
 	ChoiceTUIOnly,
 	ChoiceCheckStatus,
 	ChoiceCycleTheme,
@@ -64,6 +62,13 @@ func (m MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// menuTickCmd returns a tea.Cmd that sends MenuTimerMsg after a duration
+func menuTickCmd(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
+		return MenuTimerMsg{}
+	})
+}
+
 func (m MenuModel) View() string {
 	menuBox := lipgloss.NewStyle().
 		Width(menuWidth).
@@ -94,9 +99,9 @@ func (m MenuModel) View() string {
 	menuContent := fmt.Sprintf("%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s",
 		titleStyle.Render("Spt-Flow"),
 		subtitleStyle.Render("Spotify TUI Mirror"),
-		renderMenuOption(0, "Start with Librespot + TUI", m.Selected, optionStyle, selectedStyle),
-		renderMenuOption(1, "Open TUI only", m.Selected, optionStyle, selectedStyle),
-		renderMenuOption(2, "Check Spotify status", m.Selected, optionStyle, selectedStyle),
+		renderMenuOption(0, "Open TUI only", m.Selected, optionStyle, selectedStyle),
+		renderMenuOption(1, "Check Spotify status", m.Selected, optionStyle, selectedStyle),
+		renderMenuOption(2, "Cycle Theme", m.Selected, optionStyle, selectedStyle),
 		renderMenuOption(3, "Help / Keybindings", m.Selected, optionStyle, selectedStyle),
 		renderMenuOption(4, "Start with Spotify Desktop", m.Selected, optionStyle, selectedStyle),
 		footerStyle.Render("↑↓ navigate · Enter select · q quit"),
@@ -154,19 +159,17 @@ func renderMenuView(m Model) string {
 		Align(lipgloss.Center)
 
 	themeName := m.Theme.Name()
-	menuContent := fmt.Sprintf("%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s",
+	menuContent := fmt.Sprintf("%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s",
 		titleStyle.Render("Spt-Flow"),
 		subtitleStyle.Render("Spotify TUI Mirror"),
-		renderMenuOption(0, "Start with Librespot + TUI", m.SelectedMenuOption, optionStyle, selectedStyle),
-		renderMenuOption(1, "Open TUI only", m.SelectedMenuOption, optionStyle, selectedStyle),
-		renderMenuOption(2, "Check Spotify status", m.SelectedMenuOption, optionStyle, selectedStyle),
-		renderMenuOption(3, fmt.Sprintf("Theme: %s", themeName), m.SelectedMenuOption, optionStyle, selectedStyle),
-		renderMenuOption(4, "Help / Keybindings", m.SelectedMenuOption, optionStyle, selectedStyle),
-		renderMenuOption(5, "Start with Spotify Desktop", m.SelectedMenuOption, optionStyle, selectedStyle),
+		renderMenuOption(0, "Open TUI only", m.SelectedMenuOption, optionStyle, selectedStyle),
+		renderMenuOption(1, "Check Spotify status", m.SelectedMenuOption, optionStyle, selectedStyle),
+		renderMenuOption(2, fmt.Sprintf("Theme: %s", themeName), m.SelectedMenuOption, optionStyle, selectedStyle),
+		renderMenuOption(3, "Help / Keybindings", m.SelectedMenuOption, optionStyle, selectedStyle),
+		renderMenuOption(4, "Start with Spotify Desktop", m.SelectedMenuOption, optionStyle, selectedStyle),
 		footerStyle.Render("↑↓ navigate · Enter select · q quit"),
 	)
 
-	// Center the box
 	horizontalMargin := (m.Width - boxWidth) / 2
 	if horizontalMargin < 0 {
 		horizontalMargin = 0
@@ -181,7 +184,6 @@ func renderMenuView(m Model) string {
 		"",
 	)
 
-	// Wrap with horizontal margins
 	result := lipgloss.NewStyle().
 		Width(m.Width).
 		Height(m.Height).
@@ -189,69 +191,4 @@ func renderMenuView(m Model) string {
 		Render(verticalContent)
 
 	return result
-}
-
-// renderKeybindingsOverlay renders a full-screen keybindings overlay
-func renderKeybindingsOverlay(m Model) string {
-	titleStyle := lipgloss.NewStyle().
-		Foreground(m.Theme.MenuTitle).
-		Bold(true).
-		Align(lipgloss.Center)
-
-	keyStyle := lipgloss.NewStyle().
-		Foreground(m.Theme.MenuSelected).
-		Bold(true)
-
-	descStyle := lipgloss.NewStyle().
-		Foreground(m.Theme.MenuOption)
-
-	boxStyle := lipgloss.NewStyle().
-		Width(50).
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(m.Theme.MenuBorder).
-		Padding(1, 2)
-
-	var overlayContent strings.Builder
-	overlayContent.WriteString(titleStyle.Render("Keybindings"))
-	overlayContent.WriteString("\n\n")
-	overlayContent.WriteString(descStyle.Render("Global:"))
-	overlayContent.WriteString("\n")
-	fmt.Fprintf(&overlayContent, "  %s  Quit", keyStyle.Render("q / Ctrl+C"))
-	overlayContent.WriteString("\n")
-	fmt.Fprintf(&overlayContent, "  %s   Show this help", keyStyle.Render("?"))
-	overlayContent.WriteString("\n\n")
-	overlayContent.WriteString(descStyle.Render("Playback:"))
-	overlayContent.WriteString("\n")
-	fmt.Fprintf(&overlayContent, "  %s   Play/Pause", keyStyle.Render("Space"))
-	overlayContent.WriteString("\n")
-	fmt.Fprintf(&overlayContent, "  %s    Next track", keyStyle.Render("n / l"))
-	overlayContent.WriteString("\n")
-	fmt.Fprintf(&overlayContent, "  %s  Previous track", keyStyle.Render("p / h"))
-	overlayContent.WriteString("\n\n")
-	overlayContent.WriteString(descStyle.Render("Volume:"))
-	overlayContent.WriteString("\n")
-	fmt.Fprintf(&overlayContent, "  %s    Increase volume", keyStyle.Render("+ / ="))
-	overlayContent.WriteString("\n")
-	fmt.Fprintf(&overlayContent, "  %s    Decrease volume", keyStyle.Render("-"))
-	overlayContent.WriteString("\n\n")
-	overlayContent.WriteString(descStyle.Render("Navigation:"))
-	overlayContent.WriteString("\n")
-	fmt.Fprintf(&overlayContent, "  %s  Scroll lyrics up", keyStyle.Render("k / ↑"))
-	overlayContent.WriteString("\n")
-	fmt.Fprintf(&overlayContent, "  %s  Scroll lyrics down", keyStyle.Render("j / ↓"))
-
-	boxContent := boxStyle.Render(overlayContent.String())
-
-	return lipgloss.NewStyle().
-		Width(m.Width).
-		Height(m.Height).
-		Align(lipgloss.Center, lipgloss.Center).
-		Render(boxContent)
-}
-
-// menuTickCmd returns a tea.Cmd that sends MenuTimerMsg after a duration
-func menuTickCmd(d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(t time.Time) tea.Msg {
-		return MenuTimerMsg{}
-	})
 }

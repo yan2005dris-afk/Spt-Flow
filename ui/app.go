@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -22,65 +21,38 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-type (
-	TickMsg            struct{}
-	PollTickMsg        struct{}
-	SpotifySignalMsg   struct{}
-	MenuChoiceMsg      struct{ Choice string }
-	MenuTimerMsg       struct{}
-	LibraryChangedMsg  struct{}
-	AddPlaylistMsg    struct{ URL string }
-	DeletePlaylistMsg  struct{ ID string }
-	ToggleFavoriteMsg  struct{ TrackID string }
-	PlayTrackMsg       struct{ TrackID string }
-)
-
-type SpotifyStateMsg struct {
-	Running  bool
-	Track    mpris.Track
-	Status   string
-	Position time.Duration
-	Volume   float64
-	Err      error
-}
-
-type LyricsMsg struct {
-	Lyrics lyrics.Lyrics
-	Err    error
-}
-
 type Model struct {
-	MprisClient         *mpris.Client
-	LyricsClient        *lyrics.Client
-	LyricsCache         *cache.Store
-	Track               mpris.Track
-	Lyrics              lyrics.Lyrics
-	PlaybackStatus      string
-	Position            time.Duration
-	LastUpdated         time.Time
-	Width, Height       int
-	ScrollOffset        int
-	SpotifyRunning      bool
-	LoadingMessage      string // e.g. "Cargando letras..." — transient loading state
-	ErrorMessage        string // actual errors
-	Visualizer          *Visualizer
-	SignalChan          chan *dbus.Signal
-	LaunchedSpotify     bool   // set true after first successful LaunchSpotify
-	ViewState           string // "menu" or "tui"
-	SelectedMenuOption  int    // 0-5 for menu navigation
-	ShowingHelp         bool   // for ? overlay
-	HelpTimer           bool   // if true, ? overlay auto-dismisses
-	StatusMessage       string // for check-status option
-	Theme               Theme  // active palette
+	MprisClient        *mpris.Client
+	LyricsClient       *lyrics.Client
+	LyricsCache        *cache.Store
+	Track              mpris.Track
+	Lyrics             lyrics.Lyrics
+	PlaybackStatus     string
+	Position           time.Duration
+	LastUpdated        time.Time
+	Width, Height      int
+	ScrollOffset       int
+	SpotifyRunning     bool
+	LoadingMessage     string // e.g. "Cargando letras..." — transient loading state
+	ErrorMessage       string // actual errors
+	Visualizer         *Visualizer
+	SignalChan         chan *dbus.Signal
+	LaunchedSpotify    bool // set true after first successful LaunchSpotify
+	ViewState          string // "menu" or "tui"
+	SelectedMenuOption int    // 0-4 for menu navigation
+	ShowingHelp        bool   // for ? overlay
+	HelpTimer          bool   // if true, ? overlay auto-dismisses
+	StatusMessage      string // for check-status option
+	Theme              Theme  // active palette
 	// Library fields
-	Library             *library.Store
-	FilterView          string   // "playlists", "favorites", "recent", or ""
-	SelectedPlaylistID  string   // currently selected playlist ID
-	SelectedTrackIndex  int      // cursor position in track list
-	SidebarWidth        int      // width of left pane in two-column layout
+	Library            *library.Store
+	FilterView         string // "playlists", "favorites", "recent", or ""
+	SelectedPlaylistID string // currently selected playlist ID
+	SelectedTrackIndex int    // cursor position in track list
+	SidebarWidth       int    // width of left pane in two-column layout
 	// URL input modal
-	URLInputActive      bool     // if true, capture URL input
-	URLInputValue       string   // accumulated URL string
+	URLInputActive bool   // if true, capture URL input
+	URLInputValue  string // accumulated URL string
 }
 
 func mustHome() string {
@@ -275,11 +247,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.LaunchedSpotify = true
 			}
 			m.ViewState = "tui"
+			if m.Library == nil {
+				m.Library, _ = library.Load()
+			}
+			if m.FilterView == "" {
+				m.FilterView = "playlists"
+			}
 			return m, tea.Batch(m.pollSpotifyCmd(), m.tickCmd(), pollTickCmd())
 
 		case ChoiceTUIOnly:
 			m.ViewState = "tui"
 			m.LaunchedSpotify = false
+			if m.Library == nil {
+				m.Library, _ = library.Load()
+			}
+			if m.FilterView == "" {
+				m.FilterView = "playlists"
+			}
 			return m, tea.Batch(m.pollSpotifyCmd(), m.tickCmd(), pollTickCmd())
 
 		case ChoiceCheckStatus:
@@ -320,6 +304,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.ViewState = "tui"
+		// Load library and set default filter view when transitioning to TUI
+		if m.Library == nil {
+			m.Library, _ = library.Load()
+		}
+		if m.FilterView == "" {
+			m.FilterView = "playlists"
+		}
 		return m, nil
 
 	case AddPlaylistMsg:
@@ -598,137 +589,7 @@ func (m Model) View() string {
 	if m.ViewState == "menu" {
 		return renderMenuView(m)
 	}
-
-	if m.ShowingHelp {
-		return renderKeybindingsOverlay(m)
-	}
-
-	if !m.SpotifyRunning {
-		return lipgloss.NewStyle().
-			Width(m.Width).
-			Height(m.Height).
-			Align(lipgloss.Center, lipgloss.Center).
-			Render("Waiting for Spotify...")
-	}
-
-	// URL input modal overlay
-	if m.URLInputActive {
-		return m.renderURLInputModal()
-	}
-
-	header := renderHeader(m)
-	footer := renderFooter(m)
-
-	headerHeight := lipgloss.Height(header)
-	footerHeight := lipgloss.Height(footer)
-	mainHeight := m.Height - headerHeight - footerHeight
-	if mainHeight < 0 {
-		mainHeight = 0
-	}
-
-	// Two-column layout when FilterView is active and width >= 80
-	var mainArea string
-	if m.Width >= 80 && m.FilterView != "" {
-		m.SidebarWidth = m.Width * 40 / 100
-		sidebarContent := m.renderSidebar(m.SidebarWidth, mainHeight)
-		trackListWidth := m.Width - m.SidebarWidth - 1
-		trackListContent := m.renderTrackList(trackListWidth, mainHeight)
-		mainArea = lipgloss.JoinHorizontal(lipgloss.Top, sidebarContent, trackListContent)
-	} else {
-		// Lyrics fill the main area minus a fixed visualizer strip below.
-		// The visualizer area is ALWAYS reserved (when wide enough) so lyrics
-		// don't shift when the visualizer appears/disappears (e.g. on track
-		// change when playback status flips).
-		visRow := 0
-		if m.Width >= 80 {
-			visRow = 3
-		}
-
-		lyricsHeight := mainHeight - visRow
-		if lyricsHeight < 3 {
-			lyricsHeight = mainHeight
-			visRow = 0
-		}
-
-		lyricsContent := renderLyrics(m, m.Width, lyricsHeight)
-		if visRow > 0 {
-			var visContent string
-			if m.PlaybackStatus == "Playing" {
-				visContent = renderVisualizer(m, m.Width, visRow)
-			} else {
-				// Reserve the visualizer area with blank lines so the layout
-				// stays put when playback toggles.
-				visContent = strings.Repeat("\n", visRow-1)
-			}
-			mainArea = lipgloss.JoinVertical(lipgloss.Left, lyricsContent, visContent)
-		} else {
-			mainArea = lyricsContent
-		}
-	}
-
-	return lipgloss.JoinVertical(lipgloss.Left, header, mainArea, footer)
-}
-
-func (m *Model) getActiveLyricIndex() int {
-	if !m.Lyrics.Synced || len(m.Lyrics.Lines) == 0 {
-		return -1
-	}
-	active := -1
-	for i, line := range m.Lyrics.Lines {
-		if line.Timestamp <= m.Position {
-			active = i
-		} else {
-			break
-		}
-	}
-	return active
-}
-
-func (m *Model) scrollUp() {
-	if m.ScrollOffset > 0 {
-		m.ScrollOffset--
-	}
-}
-
-func (m *Model) scrollDown() {
-	maxScroll := len(m.Lyrics.Lines) - 1
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	if m.ScrollOffset < maxScroll {
-		m.ScrollOffset++
-	}
-}
-
-func (m *Model) cursorUp() {
-	if m.SelectedTrackIndex > 0 {
-		m.SelectedTrackIndex--
-	}
-}
-
-func (m *Model) cursorDown() {
-	if m.Library == nil {
-		return
-	}
-	var max int
-	switch m.FilterView {
-	case "playlists":
-		if m.SelectedPlaylistID != "" {
-			pl, ok := m.Library.GetPlaylist(m.SelectedPlaylistID)
-			if ok {
-				max = len(pl.TrackIDs)
-			}
-		} else {
-			max = len(m.Library.GetPlaylists())
-		}
-	case "favorites":
-		max = len(m.Library.GetFavorites())
-	case "recent":
-		max = len(m.Library.GetRecent())
-	}
-	if m.SelectedTrackIndex < max-1 {
-		m.SelectedTrackIndex++
-	}
+	return renderTUIScreen(m)
 }
 
 func (m *Model) tickCmd() tea.Cmd {
@@ -829,160 +690,104 @@ func (m *Model) fetchLyricsCmd(track mpris.Track) tea.Cmd {
 	}
 }
 
-func renderHeader(m Model) string {
-	style := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.Theme.Header).
-		Background(lipgloss.Color("0")).                           // subtle dark bg behind header
-		Border(lipgloss.NormalBorder(), true, false, true, false). // top + bottom border
-		BorderForeground(m.Theme.MenuBorder).
-		Width(m.Width).
-		Padding(0, 1)
-
-	trackInfo := fmt.Sprintf("%s - %s", m.Track.Title, m.Track.Artist)
-	if m.Track.Album != "" {
-		trackInfo += fmt.Sprintf(" (%s)", m.Track.Album)
+// renderTUIScreen builds the main TUI view: header, body (lyrics + optional sidebar),
+// and footer. Returns the empty-state placeholder when Spotify is not running.
+func renderTUIScreen(m Model) string {
+	if m.ShowingHelp {
+		return renderKeybindingsOverlay(m)
 	}
 
-	return style.Render(trackInfo)
-}
-
-func renderFooter(m Model) string {
-	width := m.Width - 4
-	if width < 10 {
-		width = 10
-	}
-
-	pbWidth := width - 15
-	if pbWidth < 5 {
-		pbWidth = 5
-	}
-
-	pb := renderProgressBar(pbWidth, m.Position, m.Track.Duration)
-
-	volPercent := 0
-	if m.MprisClient != nil {
-		if v, err := m.MprisClient.GetVolume(); err == nil {
-			volPercent = int(v * 100)
-		}
-	}
-
-	posStr := formatDuration(m.Position)
-	durStr := formatDuration(m.Track.Duration)
-
-	info := fmt.Sprintf("%s %s %s [%d%% Volume]", posStr, pb, durStr, volPercent)
-
-	footerStyle := lipgloss.NewStyle().
-		Padding(0, 1)
 	if !m.SpotifyRunning {
-		footerStyle = footerStyle.Foreground(m.Theme.Waiting)
+		return lipgloss.NewStyle().
+			Width(m.Width).
+			Height(m.Height).
+			Align(lipgloss.Center, lipgloss.Center).
+			Render("Waiting for Spotify...")
+	}
+
+	// URL input modal overlay
+	if m.URLInputActive {
+		return m.renderURLInputModal()
+	}
+
+	// Build header as a simple visible string (NO lipgloss for header)
+	trackInfo := fmt.Sprintf("♪  %s  —  %s", m.Track.Title, m.Track.Artist)
+	if m.Track.Album != "" {
+		trackInfo += fmt.Sprintf("  (%s)", m.Track.Album)
+	}
+	hdrLine1 := trackInfo
+	hdrLine2 := strings.Repeat("-", m.Width)
+	header := hdrLine1 + "\n" + hdrLine2
+
+	// Footer (1 line)
+	footer := renderFooter(m)
+
+	// Main area
+	const headerHeight = 2
+	const footerHeight = 1
+	mainHeight := m.Height - headerHeight - footerHeight
+	if mainHeight < 3 {
+		mainHeight = 3
+	}
+
+	var mainAreaLines []string
+	if m.Width < 80 || m.SidebarWidth == 0 {
+		lyrics := renderLyrics(m, m.Width, mainHeight)
+		mainAreaLines = strings.Split(lyrics, "\n")
 	} else {
-		footerStyle = footerStyle.Foreground(m.Theme.Footer)
-	}
-	return footerStyle.Render(info)
-}
+		sidebarContent := m.renderSidebar(m.SidebarWidth, mainHeight)
+		lyricsWidth := m.Width - m.SidebarWidth - 1
+		if lyricsWidth < 10 {
+			lyricsWidth = 10
+		}
+		lyricsContent := renderLyrics(m, lyricsWidth, mainHeight)
 
-func renderProgressBar(width int, pos, dur time.Duration) string {
-	if dur <= 0 {
-		return strings.Repeat("░", width)
-	}
-	ratio := float64(pos) / float64(dur)
-	if ratio > 1.0 {
-		ratio = 1.0
-	}
-	filled := int(ratio * float64(width))
-	empty := width - filled
-	if empty < 0 {
-		empty = 0
-	}
-	return strings.Repeat("█", filled) + strings.Repeat("░", empty)
-}
+		sidebarLines := strings.Split(sidebarContent, "\n")
+		lyricsLines := strings.Split(lyricsContent, "\n")
 
-func formatDuration(d time.Duration) string {
-	s := int(d.Seconds())
-	m := s / 60
-	s = s % 60
-	return fmt.Sprintf("%02d:%02d", m, s)
-}
-
-func renderLyrics(m Model, width, height int) string {
-	if len(m.Lyrics.Lines) == 0 {
-		var msg string
-		var color lipgloss.Color
-		switch {
-		case m.LoadingMessage != "":
-			msg = m.LoadingMessage
-			color = m.Theme.Waiting
-		case m.ErrorMessage != "":
-			msg = "Error: " + m.ErrorMessage
-			color = m.Theme.Error
-		default:
-			msg = "No lyrics available"
-			color = m.Theme.MenuDim
+		for len(sidebarLines) < mainHeight {
+			sidebarLines = append(sidebarLines, strings.Repeat(" ", m.SidebarWidth))
+		}
+		for len(lyricsLines) < mainHeight {
+			lyricsLines = append(lyricsLines, strings.Repeat(" ", lyricsWidth))
+		}
+		if len(sidebarLines) > mainHeight {
+			sidebarLines = sidebarLines[:mainHeight]
+		}
+		if len(lyricsLines) > mainHeight {
+			lyricsLines = lyricsLines[:mainHeight]
 		}
 
-		// Render the message centered in a single line, then pad to `height`
-		// lines so the layout stays stable across content changes.
-		rendered := lipgloss.NewStyle().
-			Width(width).
-			Align(lipgloss.Center).
-			Foreground(color).
-			Render(msg)
-
-		// Center the message vertically within the lyrics area.
-		padCount := (height - 1) / 2
-		padding := strings.Repeat("\n", padCount)
-		return padding + rendered + strings.Repeat("\n", height-1-padCount)
-	}
-
-	var renderedLines []string
-	if m.Lyrics.Synced {
-		active := m.getActiveLyricIndex()
-		mid := height / 2
-		start := active - mid
-		if start < 0 {
-			start = 0
-		}
-
-		for i := 0; i < height; i++ {
-			lineIdx := start + i
-			if lineIdx < len(m.Lyrics.Lines) {
-				line := m.Lyrics.Lines[lineIdx]
-				content := line.Content
-				if len(content) > width {
-					content = content[:width]
-				}
-
-				style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center)
-				if lineIdx == active {
-					style = style.Foreground(m.Theme.LyricActive).Bold(true)
-				} else {
-					style = style.Foreground(m.Theme.LyricInactive)
-				}
-				renderedLines = append(renderedLines, style.Render(content))
-			} else {
-				renderedLines = append(renderedLines, "")
+		for i := 0; i < mainHeight; i++ {
+			sLine := sidebarLines[i]
+			if len(sLine) < m.SidebarWidth {
+				sLine = sLine + strings.Repeat(" ", m.SidebarWidth-len(sLine))
+			} else if len(sLine) > m.SidebarWidth {
+				sLine = sLine[:m.SidebarWidth]
 			}
-		}
-	} else {
-		for i := 0; i < height; i++ {
-			lineIdx := m.ScrollOffset + i
-			if lineIdx < len(m.Lyrics.Lines) {
-				line := m.Lyrics.Lines[lineIdx]
-				content := line.Content
-				if len(content) > width {
-					content = content[:width]
-				}
-				style := lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Foreground(m.Theme.LyricPlain)
-				renderedLines = append(renderedLines, style.Render(content))
-			} else {
-				renderedLines = append(renderedLines, "")
+			lLine := lyricsLines[i]
+			if len(lLine) < lyricsWidth {
+				lLine = lLine + strings.Repeat(" ", lyricsWidth-len(lLine))
+			} else if len(lLine) > lyricsWidth {
+				lLine = lLine[:lyricsWidth]
 			}
+			mainAreaLines = append(mainAreaLines, sLine+"│"+lLine)
 		}
 	}
-	return strings.Join(renderedLines, "\n")
+
+	for len(mainAreaLines) < mainHeight {
+		mainAreaLines = append(mainAreaLines, strings.Repeat(" ", m.Width))
+	}
+	if len(mainAreaLines) > mainHeight {
+		mainAreaLines = mainAreaLines[:mainHeight]
+	}
+
+	mainArea := strings.Join(mainAreaLines, "\n")
+
+	return header + "\n" + mainArea + "\n" + footer
 }
 
+// renderVisualizer renders the visualizer block for the current model state.
 func renderVisualizer(m Model, width, height int) string {
 	if m.Visualizer == nil {
 		m.Visualizer = NewVisualizer(width, float64(height))
@@ -992,8 +797,6 @@ func renderVisualizer(m Model, width, height int) string {
 	}
 	lines := m.Visualizer.Render(height)
 
-	// Pick the active theme color. Audio mode → VisualizerBackground;
-	// procedural mode → Visualizer.
 	lipglossColor := m.Theme.Visualizer
 	if m.Visualizer.AudioCapture != nil {
 		lipglossColor = m.Theme.VisualizerBackground
@@ -1009,273 +812,4 @@ func renderVisualizer(m Model, width, height int) string {
 		}
 	}
 	return strings.Join(styledLines, "\n")
-}
-
-// renderURLInputModal renders the URL paste modal overlay.
-func (m Model) renderURLInputModal() string {
-	width := 60
-	height := 5
-	x := (m.Width - width) / 2
-	if x < 0 {
-		x = 0
-	}
-	y := (m.Height - height) / 2
-	if y < 0 {
-		y = 0
-	}
-
-	borderStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(m.Theme.MenuBorder).
-		Width(width).
-		Height(height)
-
-	content := fmt.Sprintf("Paste Spotify URL and press Enter:\n\n  %s", m.URLInputValue)
-	if m.URLInputValue == "" {
-		content = "Paste Spotify URL and press Enter:\n\n  (waiting for input...)"
-	}
-
-	modal := lipgloss.Place(m.Width, m.Height,
-		lipgloss.Center, lipgloss.Center,
-		borderStyle.Render(content),
-	)
-
-	// Also show the URL value at the bottom of the screen for feedback
-	return lipgloss.JoinVertical(lipgloss.Left,
-		modal,
-		lipgloss.NewStyle().
-			Foreground(m.Theme.Waiting).
-			Render("URL: "+m.URLInputValue),
-	)
-}
-
-// renderSidebar renders the left pane with filter tabs and list.
-func (m Model) renderSidebar(width, height int) string {
-	if width < 5 {
-		width = 5
-	}
-
-	tabStyle := lipgloss.NewStyle().
-		Width(width).
-		Foreground(m.Theme.MenuDim)
-
-	activeStyle := lipgloss.NewStyle().
-		Width(width).
-		Foreground(m.Theme.Header).
-		Bold(true)
-
-	var tabsLine string
-	if m.FilterView == "playlists" {
-		tabsLine = activeStyle.Render("[1]Playlists") + tabStyle.Render(" [2]Favorites [3]Recent")
-	} else if m.FilterView == "favorites" {
-		tabsLine = tabStyle.Render("[1]Playlists ") + activeStyle.Render("[2]Favorites") + tabStyle.Render(" [3]Recent")
-	} else if m.FilterView == "recent" {
-		tabsLine = tabStyle.Render("[1]Playlists [2]Favorites ") + activeStyle.Render("[3]Recent")
-	}
-
-	// Build list content
-	var listContent []string
-	listHeight := height - 1 // minus 1 for tabs row
-
-	switch m.FilterView {
-	case "playlists":
-		if m.Library != nil {
-			playlists := m.Library.GetPlaylists()
-			for i, pl := range playlists {
-				prefix := "  "
-				if i == m.SelectedTrackIndex {
-					prefix = "> "
-				}
-				name := pl.Name
-				if name == "" {
-					name = "Playlist"
-				}
-				listContent = append(listContent, prefix+name)
-			}
-		}
-	case "favorites":
-		if m.Library != nil {
-			favorites := m.Library.GetFavorites()
-			for i, tr := range favorites {
-				prefix := "  "
-				if i == m.SelectedTrackIndex {
-					prefix = "> "
-				}
-				listContent = append(listContent, prefix+tr.Title+" - "+tr.Artist)
-			}
-		}
-	case "recent":
-		if m.Library != nil {
-			recent := m.Library.GetRecent()
-			for i, tr := range recent {
-				prefix := "  "
-				marker := " "
-				if tr.ID == m.Track.ID {
-					marker = "▶"
-				}
-				if i == m.SelectedTrackIndex {
-					prefix = "> "
-				}
-				listContent = append(listContent, prefix+marker+" "+tr.Title+" - "+tr.Artist)
-			}
-		}
-	}
-
-	// Pad list to fill height
-	for len(listContent) < listHeight {
-		listContent = append(listContent, "")
-	}
-	if len(listContent) > listHeight {
-		listContent = listContent[:listHeight]
-	}
-
-	listStyle := lipgloss.NewStyle().
-		Width(width).
-		Height(listHeight)
-
-	listRendered := listStyle.Render(strings.Join(listContent, "\n"))
-
-	return lipgloss.JoinVertical(lipgloss.Left,
-		lipgloss.NewStyle().Width(width).Render(tabsLine),
-		listRendered,
-	)
-}
-
-// renderTrackList renders the right pane with track details.
-func (m Model) renderTrackList(width, height int) string {
-	if width < 5 {
-		width = 5
-	}
-
-	headerText := fmt.Sprintf("<%s>", m.FilterView)
-	count := 0
-	if m.Library != nil {
-		switch m.FilterView {
-		case "playlists":
-			if m.SelectedPlaylistID != "" {
-				if pl, ok := m.Library.GetPlaylist(m.SelectedPlaylistID); ok {
-					count = len(pl.TrackIDs)
-				}
-			}
-		case "favorites":
-			count = len(m.Library.GetFavorites())
-		case "recent":
-			count = len(m.Library.GetRecent())
-		}
-	}
-	headerText = fmt.Sprintf("%s (%d)", headerText, count)
-
-	headerStyle := lipgloss.NewStyle().
-		Width(width).
-		Bold(true).
-		Foreground(m.Theme.Header)
-
-	listHeight := height - 1
-	var tracks []string
-	tracks = append(tracks, headerStyle.Render(headerText))
-
-	switch m.FilterView {
-	case "playlists":
-		if m.Library != nil && m.SelectedPlaylistID != "" {
-			if pl, ok := m.Library.GetPlaylist(m.SelectedPlaylistID); ok {
-				for i, tid := range pl.TrackIDs {
-					prefix := "  "
-					if i == m.SelectedTrackIndex {
-						prefix = "> "
-					}
-					tracks = append(tracks, prefix+tid)
-				}
-			}
-		}
-	case "favorites":
-		if m.Library != nil {
-			favorites := m.Library.GetFavorites()
-			for i, tr := range favorites {
-				prefix := "  "
-				marker := " "
-				if tr.ID == m.Track.ID {
-					marker = "▶"
-				}
-				if i == m.SelectedTrackIndex {
-					prefix = "> "
-				}
-				tracks = append(tracks, fmt.Sprintf("%s%s %s - %s", prefix, marker, tr.Title, tr.Artist))
-			}
-		}
-	case "recent":
-		if m.Library != nil {
-			recent := m.Library.GetRecent()
-			for i, tr := range recent {
-				prefix := "  "
-				marker := " "
-				if tr.ID == m.Track.ID {
-					marker = "▶"
-				}
-				if i == m.SelectedTrackIndex {
-					prefix = "> "
-				}
-				tracks = append(tracks, fmt.Sprintf("%s%s %s - %s", prefix, marker, tr.Title, tr.Artist))
-			}
-		}
-	}
-
-	if len(tracks) == 1 { // only header
-		emptyStyle := lipgloss.NewStyle().
-			Width(width).
-			Height(listHeight).
-			Align(lipgloss.Center, lipgloss.Center).
-			Foreground(m.Theme.MenuDim)
-		tracks = append(tracks, emptyStyle.Render("No tracks"))
-	}
-
-	// Pad to fill height
-	for len(tracks) < height {
-		tracks = append(tracks, "")
-	}
-	if len(tracks) > height {
-		tracks = tracks[:height]
-	}
-
-	contentStyle := lipgloss.NewStyle().
-		Width(width).
-		Height(height)
-
-	return contentStyle.Render(strings.Join(tracks, "\n"))
-}
-
-// lipglossToAnsi converts a lipgloss.Color (string) to its raw ANSI escape
-// sequence for foreground color. Supports both hex colors ("#rrggbb") and
-// ANSI numbers ("15", "12", "256:N").
-func lipglossToAnsi(c lipgloss.Color) string {
-	s := string(c)
-	if strings.HasPrefix(s, "#") {
-		return hexToAnsi(s)
-	}
-	// ANSI 16-color
-	if n, err := strconv.Atoi(s); err == nil && n >= 0 && n <= 15 {
-		if n < 8 {
-			return fmt.Sprintf("\x1b[%dm", 30+n)
-		}
-		return fmt.Sprintf("\x1b[%dm", 90+n-8)
-	}
-	// 256-color: "256:N"
-	if strings.HasPrefix(s, "256:") {
-		if n, err := strconv.Atoi(strings.TrimPrefix(s, "256:")); err == nil {
-			return fmt.Sprintf("\x1b[38;5;%dm", n)
-		}
-	}
-	// Fallback
-	return "\x1b[93m" // bright yellow
-}
-
-// hexToAnsi converts "#rrggbb" to a 24-bit ANSI foreground escape.
-func hexToAnsi(hex string) string {
-	hex = strings.TrimPrefix(hex, "#")
-	if len(hex) != 6 {
-		return "\x1b[93m"
-	}
-	r, _ := strconv.ParseUint(hex[0:2], 16, 8)
-	g, _ := strconv.ParseUint(hex[2:4], 16, 8)
-	b, _ := strconv.ParseUint(hex[4:6], 16, 8)
-	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", r, g, b)
 }
