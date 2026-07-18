@@ -715,8 +715,14 @@ func renderTUIScreen(m Model) string {
 	if m.Track.Album != "" {
 		trackInfo += fmt.Sprintf("  (%s)", m.Track.Album)
 	}
-	hdrLine1 := trackInfo
-	hdrLine2 := strings.Repeat("-", m.Width)
+	// Make sure trackInfo is at least visible
+	if trackInfo == "" || trackInfo == "♪  — " {
+		trackInfo = "♪  [No track info]"
+	}
+	// Header line 1: track info
+	hdrLine1 := fmt.Sprintf("=== HEADER: %s ===", trackInfo)
+	// Header line 2: separator
+	hdrLine2 := strings.Repeat("=", m.Width)
 	header := hdrLine1 + "\n" + hdrLine2
 
 	// Footer (1 line)
